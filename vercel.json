@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/belto-proxy/process_pdf_base64",
+      "destination": "http://belto.myftp.biz:5005/process_pdf_base64"
+    },
+    {
+      "source": "/api/belto-proxy/process_docx_base64",
+      "destination": "http://belto.myftp.biz:5005/process_docx_base64"
+    },
+    {
+      "source": "/api/belto-proxy/embed",
+      "destination": "http://belto.myftp.biz:5005/embed"
+    }
+  ]
+}
