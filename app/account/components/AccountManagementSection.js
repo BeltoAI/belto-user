@@ -149,7 +149,7 @@ const AccountManagementSection = ({ user }) => {
           <div className="space-y-4">
             <div>
               <label className="block text-red-200 font-medium mb-2">
-                Type "DELETE MY ACCOUNT" to confirm:
+                Type &quot;DELETE MY ACCOUNT&quot; to confirm:
               </label>
               <input
                 type="text"
