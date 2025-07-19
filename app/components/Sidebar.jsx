@@ -17,7 +17,6 @@ import SimpleBar from 'simplebar-react';
 import 'simplebar-react/dist/simplebar.min.css';
 import { toast } from 'react-toastify';
 import { deleteAllCookies } from '@/utils/auth';
-import { useUser } from '@/hooks/useUser';
 
 // Custom scrollbar styles
 const customScrollbarStyles = `
@@ -30,12 +29,10 @@ const customScrollbarStyles = `
 `;
 
 const Sidebar = () => {
-  // Get user from context
-  const { user } = useUser();
-  
   // UI and data states
   const [isOpen, setIsOpen] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
+  const [user, setUser] = useState(null);
   const [joinedClasses, setJoinedClasses] = useState([]);
   const [error, setError] = useState('');
   const [expandedClass, setExpandedClass] = useState(null);
@@ -77,14 +74,27 @@ const Sidebar = () => {
   // Modified useEffect for fetching user and classes
   useEffect(() => {
     const fetchUserAndClasses = async () => {
-      // Skip if sessions already initialized or user not available
-      if (sessionsInitialized || !user?._id) return;
+      // Skip if sessions already initialized
+      if (sessionsInitialized) return;
 
       try {
         setClassesLoading(true);
-        
-        // Fetch joined classes using the user ID from context
-        const classesResponse = await fetch(`/api/classes/joined?studentId=${user._id}`);
+        // Fetch user data first
+        const userResponse = await fetch('/api/auth/user'); // Removed token header, assuming cookie auth
+        if (!userResponse.ok) {
+            if (userResponse.status === 401) {
+                // Handle unauthorized access, maybe redirect to login
+                console.error("User not authenticated");
+                router.push('/'); // Redirect to login if not authenticated
+                return; // Stop execution if not authenticated
+            }
+            throw new Error('Failed to fetch user');
+        }
+        const userData = await userResponse.json();
+        setUser(userData); // Set user state
+
+        // Fetch joined classes using the fetched user ID
+        const classesResponse = await fetch(`/api/classes/joined?studentId=${userData._id}`);
         if (!classesResponse.ok) throw new Error('Failed to fetch joined classes');
         const classes = await classesResponse.json();
 
@@ -129,7 +139,7 @@ const Sidebar = () => {
 
     fetchUserAndClasses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionsInitialized, router, user]); // Added user to dependency array
+  }, [sessionsInitialized, router]); // Added router to dependency array
 
 
   // Fixed initialize sessions function
@@ -423,34 +433,13 @@ const Sidebar = () => {
           {/* Bottom section */}
           <div className="border-t border-[#262626] p-4 mt-auto bg-[#1A1A1A]">
             {user && (
-              <button
-                onClick={() => router.push('/account')}
-                className="flex items-center w-full mb-3 p-2 hover:bg-[#262626] rounded-md transition-colors group"
-              >
-                <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden mr-3">
-                  {user.profilePicture ? (
-                    <img
-                      src={user.profilePicture}
-                      alt="Profile"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-sm font-bold text-gray-300">
-                      {user.name?.charAt(0)?.toUpperCase() || 'U'}
-                    </span>
-                  )}
-                </div>
-                <div className="flex-1 text-left">
-                  <div className="text-white text-sm font-medium truncate">
-                    {user.name || user.username || 'User'}
-                  </div>
-                  <div className="text-gray-400 text-xs truncate">
-                    View profile
-                  </div>
-                </div>
-                <User className="w-4 h-4 text-gray-400 group-hover:text-[#FFD700] transition-colors" />
-              </button>
+              <div className="flex items-center mb-3"> {/* Reduced margin */}
+                <User className="w-5 h-5 text-[#FFD700] mr-2" />
+                <span className="text-white truncate text-sm">{user.username}</span> {/* Slightly smaller text */}
+              </div>
             )}
+
+            {/* Feedback button removed from here */}
 
             <button
               onClick={handleLogout}

@@ -4,7 +4,7 @@ import connectDB from '@/lib/db';
 import Student from '@/models/Student';
 import { sign } from 'jsonwebtoken';
 
-export const authOptions = {
+const handler = NextAuth({
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID,
@@ -82,8 +82,6 @@ export const authOptions = {
   },
   debug: process.env.NODE_ENV === 'development',
   secret: process.env.NEXTAUTH_SECRET,
-};
-
-const handler = NextAuth(authOptions);
+});
 
 export { handler as GET, handler as POST };
