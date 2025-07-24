@@ -146,7 +146,7 @@ const BeltoMainPage = () => {
       // Create the message object
       const messagePayload = {
         isBot: false,
-        avatar: '/user.png',
+        avatar: user.profileImage || '/user.png',
         name: user.username,
         message: inputText.trim(),
         suggestions: [],

@@ -17,15 +17,16 @@ export const useChatHandlers = (
   lectureMaterials = [] // Add this parameter
 ) => {
   const [username, setUsername] = useState('User');
+  const [userAvatar, setUserAvatar] = useState('/user.png');
   const { generateAIResponse } = useAIResponse();
 
   // Track total token usage for the session
   const [totalTokenUsage, setTotalTokenUsage] = useState(0);
   const [totalPrompts, setTotalPrompts] = useState(0);
 
-  // Add useEffect to fetch username when component mounts
+  // Add useEffect to fetch username and profile image when component mounts
   useEffect(() => {
-    const fetchUsername = async () => {
+    const fetchUserData = async () => {
       try {
         const response = await fetch('/api/auth/user', {
           headers: {
@@ -37,14 +38,16 @@ export const useChatHandlers = (
         
         const userData = await response.json();
         setUsername(userData.username || 'User');
+        setUserAvatar(userData.profileImage || '/user.png');
       } catch (error) {
-        console.error('Error fetching username:', error);
-        // Fallback to 'User' if fetch fails
+        console.error('Error fetching user data:', error);
+        // Fallback to defaults if fetch fails
         setUsername('User');
+        setUserAvatar('/user.png');
       }
     };
 
-    fetchUsername();
+    fetchUserData();
   }, []);
 
   // Calculate initial values when component mounts
@@ -103,11 +106,11 @@ export const useChatHandlers = (
     try {
       setIsGenerating(true);
 
-      // Update user message to use the fetched username
+      // Update user message to use the fetched username and avatar
       const userMessage = {
         id: `temp-user-${messageId}`,
         isBot: false,
-        avatar: '/user.png',
+        avatar: userAvatar, // Use the fetched user avatar here
         name: username, // Use the fetched username here
         message: text.trim(),
         suggestions: [],

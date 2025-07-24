@@ -23,6 +23,42 @@ const studentSchema = new mongoose.Schema({
     emailVerificationExpires: Date,  // Changed from default: null
     resetPasswordToken: String,
     resetPasswordExpires: Date,
+    // Extended profile fields
+    fullName: {
+        type: String,
+        default: ''
+    },
+    phoneNumber: {
+        type: String,
+        default: ''
+    },
+    dateOfBirth: {
+        type: Date,
+        default: null
+    },
+    gender: {
+        type: String,
+        enum: ['', 'male', 'female', 'non-binary', 'other', 'prefer-not-to-say'],
+        default: ''
+    },
+    veterinarianStatus: {
+        type: String,
+        enum: ['', 'licensed-veterinarian', 'veterinary-student', 'veterinary-technician', 'not-veterinary'],
+        default: ''
+    },
+    disabilityStatus: {
+        type: String,
+        enum: ['', 'no-disability', 'has-disability', 'prefer-not-to-say'],
+        default: ''
+    },
+    ethnicity: {
+        type: String,
+        default: ''
+    },
+    profileImage: {
+        type: String,
+        default: null
+    },
     createdAt: {
         type: Date,
         default: Date.now

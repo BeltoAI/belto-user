@@ -433,10 +433,16 @@ const Sidebar = () => {
           {/* Bottom section */}
           <div className="border-t border-[#262626] p-4 mt-auto bg-[#1A1A1A]">
             {user && (
-              <div className="flex items-center mb-3"> {/* Reduced margin */}
-                <User className="w-5 h-5 text-[#FFD700] mr-2" />
-                <span className="text-white truncate text-sm">{user.username}</span> {/* Slightly smaller text */}
-              </div>
+              <button
+                onClick={() => {
+                  router.push('/account');
+                  setIsOpen(false); // Close sidebar when navigating
+                }}
+                className="flex items-center w-full mb-3 px-2 py-2 hover:bg-[#262626] rounded-md transition-colors group" 
+              >
+                <User className="w-5 h-5 text-[#FFD700] mr-2 group-hover:text-[#FFE44D]" />
+                <span className="text-white truncate text-sm group-hover:text-[#FFE44D]">{user.username}</span>
+              </button>
             )}
 
             {/* Feedback button removed from here */}
