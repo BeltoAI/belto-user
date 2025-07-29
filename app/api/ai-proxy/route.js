@@ -75,6 +75,19 @@ function selectEndpoint() {
     if (a.lastResponseTime !== b.lastResponseTime) {
       return a.lastResponseTime - b.lastResponseTime;
     }
+    // If response times are equal, prioritize by least failures
+    return a.failCount - b.failCount;
+  });
+  
+  return availableEndpoints[0].url;
+}
+
+/**
+ * Updates endpoint statistics based on request success/failure
+ * @param {string} url - The endpoint URL
+ * @param {boolean} success - Whether the request was successful
+ * @param {number} responseTime - Response time in milliseconds
+ */
 function updateEndpointStats(url, success, responseTime) {
   const endpoint = endpointStats.find(e => e.url === url);
   if (!endpoint) return;
@@ -100,19 +113,6 @@ function updateEndpointStats(url, success, responseTime) {
       endpoint.circuitBreakerOpen = true;
       endpoint.lastCircuitBreakerCheck = Date.now();
     }
-    
-    if (endpoint.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-      console.log(`Marking ${url} as unavailable after ${endpoint.consecutiveFailures} consecutive failures`);
-      endpoint.isAvailable = false;
-    }
-  }
-}   // Gradually reduce fail count on success
-    if (endpoint.failCount > 0) {
-      endpoint.failCount = Math.max(0, endpoint.failCount - 1);
-    }
-  } else {
-    endpoint.failCount++;
-    endpoint.consecutiveFailures++;
     
     if (endpoint.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
       console.log(`Marking ${url} as unavailable after ${endpoint.consecutiveFailures} consecutive failures`);
