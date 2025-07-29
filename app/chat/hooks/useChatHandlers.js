@@ -83,7 +83,14 @@ export const useChatHandlers = (
 
   // Modify handleNewMessage to use the username
   const handleNewMessage = useCallback(async (text, attachment = null) => {
-    if (!userId || !text.trim() || !currentSessionId) return;
+    if (!userId || !text.trim() || !currentSessionId) {
+      console.warn('Missing required parameters for handleNewMessage:', {
+        userId: !!userId,
+        text: !!text.trim(),
+        currentSessionId: !!currentSessionId
+      });
+      return;
+    }
 
     // Check if we've reached the maximum prompts limit
     const maxPromptsLimit = aiPreferences?.numPrompts || 5;
@@ -174,13 +181,41 @@ export const useChatHandlers = (
         }];
       }
 
-      const { response: aiResponse, tokenUsage: messageTokenUsage } = 
-        await generateAIResponse(
+      console.log('Generating AI response with:', {
+        promptLength: promptToSend.length,
+        attachmentsCount: attachmentsToSend.length,
+        conversationHistoryLength: conversationHistory.length,
+        totalPrompts,
+        hasAIPreferences: !!aiPreferences
+      });
+
+      let aiResponse, messageTokenUsage;
+      try {
+        const result = await generateAIResponse(
           promptToSend,
           attachmentsToSend,
           conversationHistory,
-          aiPreferences 
+          aiPreferences,
+          totalPrompts  // Pass the current prompt count
         );
+        aiResponse = result.response;
+        messageTokenUsage = result.tokenUsage;
+      } catch (aiError) {
+        console.error('AI response generation failed:', aiError);
+        
+        // Create a more user-friendly error message
+        let errorMsg = 'I apologize, but I encountered an error generating a response.';
+        if (aiError.message.includes('503')) {
+          errorMsg += ' The AI service is temporarily unavailable. Please try again in a moment.';
+        } else if (aiError.message.includes('timeout')) {
+          errorMsg += ' The request timed out. Please try again.';
+        } else {
+          errorMsg += ' Please try again.';
+        }
+        
+        aiResponse = errorMsg;
+        messageTokenUsage = { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
+      }
 
       const botMessage = {
         id: `temp-bot-${messageId}`,

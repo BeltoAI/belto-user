@@ -85,78 +85,82 @@ export const useAIResponse = () => {
       console.log("Message count:", messageCount, "Limit:", aiPreferences?.numPrompts || "unspecified");
       console.log("Token usage:", totalTokensUsed, "Limit:", aiPreferences?.tokenPredictionLimit || "unspecified");
 
-      const response = await fetch('/api/ai-proxy', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      // Handle different error responses
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error("AI proxy error:", response.status, errorData);
-        
-        // If this is potentially the first message (based on history length)
-        if (formattedHistory.length === 0 || messageCount === 0) {
-          console.log("First message failed, attempting retry...");
-          // Wait briefly then retry
-          await new Promise(resolve => setTimeout(resolve, 1000));
+      // Implement client-side retry logic for better reliability
+      let lastError = null;
+      let maxRetries = 2;
+      
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`AI request attempt ${attempt}...`);
           
-          const retryResponse = await fetch('/api/ai-proxy', {
+          const response = await fetch('/api/ai-proxy', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify(requestBody),
           });
+
+          if (response.ok) {
+            const data = await response.json();
+            
+            // Check if the new response would exceed the token limit
+            if (aiPreferences?.tokenPredictionLimit && 
+                (totalTokensUsed + (data.tokenUsage?.total_tokens || 0)) > aiPreferences.tokenPredictionLimit) {
+              return {
+                response: data.response,
+                tokenUsage: data.tokenUsage || {
+                  total_tokens: 0,
+                  prompt_tokens: 0,
+                  completion_tokens: 0
+                },
+                tokenLimitWarning: `You are now at ${totalTokensUsed + (data.tokenUsage?.total_tokens || 0)}/${aiPreferences.tokenPredictionLimit} tokens for this session.`
+              };
+            }
+            
+            return {
+              response: data.response || 'I apologize, but I could not generate a response.',
+              limitReached: data.limitReached || false,
+              tokenUsage: data.tokenUsage || {
+                total_tokens: 0,
+                prompt_tokens: 0,
+                completion_tokens: 0
+              }
+            };
+          }
           
-          if (retryResponse.ok) {
-            return await retryResponse.json();
+          // Handle error responses
+          const errorData = await response.json().catch(() => ({}));
+          lastError = new Error(errorData.error || `HTTP ${response.status}`);
+          lastError.status = response.status;
+          
+          console.error(`AI proxy error on attempt ${attempt}:`, response.status, errorData);
+          
+          // If this is not the last attempt and it's a potentially recoverable error, retry
+          if (attempt < maxRetries && (response.status === 503 || response.status >= 500)) {
+            const waitTime = attempt * 1000; // Progressive delay: 1s, 2s
+            console.log(`Waiting ${waitTime}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            continue;
+          }
+          
+          // If it's not a recoverable error, break out of the loop
+          break;
+        } catch (error) {
+          lastError = error;
+          console.error(`Network error on attempt ${attempt}:`, error);
+          
+          // If this is not the last attempt, wait before retrying
+          if (attempt < maxRetries) {
+            const waitTime = attempt * 1000; // Progressive delay: 1s, 2s
+            console.log(`Waiting ${waitTime}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
           }
         }
-        
-        let errorMessage = errorData.error || 'Failed to generate AI response';
-        setError(errorMessage);
-        // Continue with existing error handling...
-        
-        // Return a fallback response with the error message
-        return {
-          response: `I apologize, but I encountered an error: ${errorMessage}`,
-          tokenUsage: {
-            total_tokens: 0,
-            prompt_tokens: 0,
-            completion_tokens: 0
-          }
-        };
       }
 
-      const data = await response.json();
-      
-      // Check if the new response would exceed the token limit
-      if (aiPreferences?.tokenPredictionLimit && 
-          (totalTokensUsed + (data.tokenUsage?.total_tokens || 0)) > aiPreferences.tokenPredictionLimit) {
-        return {
-          response: data.response,
-          tokenUsage: data.tokenUsage || {
-            total_tokens: 0,
-            prompt_tokens: 0,
-            completion_tokens: 0
-          },
-          tokenLimitWarning: `You are now at ${totalTokensUsed + (data.tokenUsage?.total_tokens || 0)}/${aiPreferences.tokenPredictionLimit} tokens for this session.`
-        };
-      }
-      
-      return {
-        response: data.response || 'I apologize, but I could not generate a response.',
-        limitReached: data.limitReached || false,
-        tokenUsage: data.tokenUsage || {
-          total_tokens: 0,
-          prompt_tokens: 0,
-          completion_tokens: 0
-        }
-      };
+      // If we get here, all retries failed
+      throw lastError || new Error('Failed to generate AI response');
     } catch (error) {
       console.error('Error generating AI response:', error);
       
@@ -189,6 +193,9 @@ export const useAIResponse = () => {
         messageCount,
         historyLength: previousMessages.length
       });
+      
+      // Add a small delay to prevent race conditions when lecture is newly selected
+      await new Promise(resolve => setTimeout(resolve, 100));
       
       // Fetch AI preferences first
       const preferencesResponse = await fetch(`/api/lectures/${lectureId}/preferences`);
@@ -237,53 +244,89 @@ export const useAIResponse = () => {
       }));
       
       // Now make the actual AI request with properly formatted message
-      const aiResponse = await fetch('/api/ai-proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message,
-          sessionId,
-          preferences,
-          history: formattedHistory,
-          messageCount,
-          messages: [
-            { role: 'user', content: message }
-          ]
-        }),
-      });
+      let lastError = null;
+      let maxRetries = 2;
       
-      if (!aiResponse.ok) {
-        const errorData = await aiResponse.json();
-        console.error("AI response generation failed:", errorData);
-        throw new Error(`AI response generation failed: ${errorData.error || aiResponse.statusText}`);
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`AI request attempt ${attempt} for lecture ${lectureId}...`);
+          
+          const aiResponse = await fetch('/api/ai-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message,
+              sessionId,
+              preferences,
+              history: formattedHistory,
+              messageCount,
+              messages: [
+                { role: 'user', content: message }
+              ]
+            }),
+          });
+          
+          if (aiResponse.ok) {
+            const data = await aiResponse.json();
+            
+            // Check if the new response would exceed the token limit
+            if (preferences.tokenPredictionLimit && 
+                (totalTokensUsed + (data.tokenUsage?.total_tokens || 0)) > preferences.tokenPredictionLimit) {
+              return {
+                response: data.response,
+                tokenUsage: data.tokenUsage || {
+                  total_tokens: 0,
+                  prompt_tokens: 0,
+                  completion_tokens: 0
+                },
+                tokenLimitWarning: `You are now at ${totalTokensUsed + (data.tokenUsage?.total_tokens || 0)}/${preferences.tokenPredictionLimit} tokens for this session.`
+              };
+            }
+            
+            return {
+              response: data.response || 'I apologize, but I could not generate a response.',
+              limitReached: data.limitReached || false,
+              tokenUsage: data.tokenUsage || {
+                total_tokens: 0, 
+                prompt_tokens: 0,
+                completion_tokens: 0
+              },
+              streaming: preferences.streaming || false
+            };
+          }
+          
+          // Handle error response
+          const errorData = await aiResponse.json().catch(() => ({}));
+          lastError = new Error(errorData.error || `HTTP ${aiResponse.status}`);
+          lastError.status = aiResponse.status;
+          
+          console.error(`AI response generation failed on attempt ${attempt}:`, errorData);
+          
+          // If this is not the last attempt and it's a potentially recoverable error, retry
+          if (attempt < maxRetries && (aiResponse.status === 503 || aiResponse.status >= 500)) {
+            const waitTime = attempt * 1000; // Progressive delay: 1s, 2s
+            console.log(`Waiting ${waitTime}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            continue;
+          }
+          
+          // If it's not a recoverable error, break out of the loop
+          break;
+        } catch (error) {
+          lastError = error;
+          console.error(`Network error on attempt ${attempt}:`, error);
+          
+          // If this is not the last attempt, wait before retrying
+          if (attempt < maxRetries) {
+            const waitTime = attempt * 1000; // Progressive delay: 1s, 2s
+            console.log(`Waiting ${waitTime}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          }
+        }
       }
       
-      const data = await aiResponse.json();
-      
-      // Check if the new response would exceed the token limit
-      if (preferences.tokenPredictionLimit && 
-          (totalTokensUsed + (data.tokenUsage?.total_tokens || 0)) > preferences.tokenPredictionLimit) {
-        return {
-          response: data.response,
-          tokenUsage: data.tokenUsage || {
-            total_tokens: 0,
-            prompt_tokens: 0,
-            completion_tokens: 0
-          },
-          tokenLimitWarning: `You are now at ${totalTokensUsed + (data.tokenUsage?.total_tokens || 0)}/${preferences.tokenPredictionLimit} tokens for this session.`
-        };
-      }
-      
-      return {
-        response: data.response || 'I apologize, but I could not generate a response.',
-        limitReached: data.limitReached || false,
-        tokenUsage: data.tokenUsage || {
-          total_tokens: 0, 
-          prompt_tokens: 0,
-          completion_tokens: 0
-        },
-        streaming: preferences.streaming || false
-      };
+      // If we get here, all retries failed
+      throw lastError || new Error('AI response generation failed after retries');
     } catch (error) {
       console.error("Error in generateAIResponseWithPreferences:", error);
       setError(error.message || "Failed to generate AI response");

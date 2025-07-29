@@ -8,20 +8,24 @@ const endpoints = [
 
 // 'http://97.90.195.162:9999/v1/chat/completions',
 
-// Endpoint health tracking instead of simple round-robin
+// Endpoint health tracking with circuit breaker pattern
 const endpointStats = endpoints.map(url => ({
   url,
   isAvailable: true,
   failCount: 0,
   lastResponseTime: 0,
   lastChecked: Date.now(),
-  consecutiveFailures: 0
+  consecutiveFailures: 0,
+  circuitBreakerOpen: false,
+  lastCircuitBreakerCheck: Date.now()
 }));
 
-const TIMEOUT_MS = 60000; // 60 seconds timeout
-const MAX_CONSECUTIVE_FAILURES = 3; // Number of failures before marking endpoint as unavailable
-const RETRY_INTERVAL_MS = 60000; // Try unavailable endpoints again after 1 minute
-const HEALTH_CHECK_THRESHOLD = 300000; // 5 minutes in ms
+const TIMEOUT_MS = 25000; // 25 seconds timeout for Vercel compatibility
+const MAX_CONSECUTIVE_FAILURES = 2; // Reduce failures before marking endpoint as unavailable
+const RETRY_INTERVAL_MS = 30000; // Try unavailable endpoints again after 30 seconds
+const HEALTH_CHECK_THRESHOLD = 180000; // 3 minutes in ms
+const CIRCUIT_BREAKER_THRESHOLD = 3; // Number of failures to open circuit breaker
+const CIRCUIT_BREAKER_TIMEOUT = 60000; // 1 minute timeout for circuit breaker
 
 /**
  * Selects the best endpoint based on availability and response time
@@ -30,7 +34,17 @@ const HEALTH_CHECK_THRESHOLD = 300000; // 5 minutes in ms
 function selectEndpoint() {
   const now = Date.now();
   
-  // First, check if any unavailable endpoints should be retried
+  // First, check circuit breakers and reset if timeout has passed
+  endpointStats.forEach(endpoint => {
+    if (endpoint.circuitBreakerOpen && (now - endpoint.lastCircuitBreakerCheck) > CIRCUIT_BREAKER_TIMEOUT) {
+      console.log(`Resetting circuit breaker for ${endpoint.url}`);
+      endpoint.circuitBreakerOpen = false;
+      endpoint.consecutiveFailures = 0;
+      endpoint.lastCircuitBreakerCheck = now;
+    }
+  });
+  
+  // Check if any unavailable endpoints should be retried
   endpointStats.forEach(endpoint => {
     if (!endpoint.isAvailable && (now - endpoint.lastChecked) > RETRY_INTERVAL_MS) {
       console.log(`Marking ${endpoint.url} as available for retry`);
@@ -40,15 +54,18 @@ function selectEndpoint() {
     }
   });
 
-  // Filter for available endpoints
-  const availableEndpoints = endpointStats.filter(endpoint => endpoint.isAvailable);
+  // Filter for available endpoints that don't have circuit breaker open
+  const availableEndpoints = endpointStats.filter(endpoint => 
+    endpoint.isAvailable && !endpoint.circuitBreakerOpen
+  );
   
   if (availableEndpoints.length === 0) {
-    // All endpoints are unavailable, reset the first one for retry
-    console.log('All endpoints unavailable, resetting the first one for retry');
+    // All endpoints are unavailable or circuit breaker is open, reset the first one for retry
+    console.log('All endpoints unavailable or circuit breaker open, resetting the first one for retry');
     endpointStats[0].isAvailable = true;
     endpointStats[0].failCount = 0;
     endpointStats[0].consecutiveFailures = 0;
+    endpointStats[0].circuitBreakerOpen = false;
     return endpointStats[0].url;
   }
   
@@ -58,19 +75,6 @@ function selectEndpoint() {
     if (a.lastResponseTime !== b.lastResponseTime) {
       return a.lastResponseTime - b.lastResponseTime;
     }
-    // If response times are similar, choose the one that hasn't been used recently
-    return a.lastChecked - b.lastChecked;
-  });
-  
-  return availableEndpoints[0].url;
-}
-
-/**
- * Updates endpoint statistics after a request
- * @param {string} url - The endpoint URL
- * @param {boolean} success - Whether the request was successful
- * @param {number} responseTime - The time taken for the response
- */
 function updateEndpointStats(url, success, responseTime) {
   const endpoint = endpointStats.find(e => e.url === url);
   if (!endpoint) return;
@@ -81,7 +85,28 @@ function updateEndpointStats(url, success, responseTime) {
     endpoint.isAvailable = true;
     endpoint.lastResponseTime = responseTime;
     endpoint.consecutiveFailures = 0;
+    endpoint.circuitBreakerOpen = false;
     // Gradually reduce fail count on success
+    if (endpoint.failCount > 0) {
+      endpoint.failCount = Math.max(0, endpoint.failCount - 1);
+    }
+  } else {
+    endpoint.failCount++;
+    endpoint.consecutiveFailures++;
+    
+    // Check if we should open the circuit breaker
+    if (endpoint.consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
+      console.log(`Opening circuit breaker for ${url} after ${endpoint.consecutiveFailures} consecutive failures`);
+      endpoint.circuitBreakerOpen = true;
+      endpoint.lastCircuitBreakerCheck = Date.now();
+    }
+    
+    if (endpoint.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      console.log(`Marking ${url} as unavailable after ${endpoint.consecutiveFailures} consecutive failures`);
+      endpoint.isAvailable = false;
+    }
+  }
+}   // Gradually reduce fail count on success
     if (endpoint.failCount > 0) {
       endpoint.failCount = Math.max(0, endpoint.failCount - 1);
     }
@@ -108,12 +133,18 @@ async function healthCheck() {
     
     try {
       const startTime = Date.now();
-      // Try to access a lightweight health endpoint if available,
-      // fallback to a simple HEAD request to the main endpoint
-      await axios.head(url, {
+      // Use a simple POST request similar to the actual chat request to test endpoint health
+      const testPayload = {
+        model: 'default-model',
+        messages: [{ role: 'user', content: 'test' }],
+        max_tokens: 10
+      };
+      
+      await axios.post(url, testPayload, {
         timeout: 5000, // Short timeout for health check
         headers: { 
-          'Content-Type': 'application/json' 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.AI_API_KEY || 'test'}`
         }
       });
       
@@ -157,6 +188,14 @@ export async function POST(request) {
       return NextResponse.json(
         { error: 'AI API key is not configured on the server' },
         { status: 500 }
+      );
+    }
+
+    // Add request validation
+    if (!body.prompt && !body.message && (!body.messages || body.messages.length === 0)) {
+      return NextResponse.json(
+        { error: "No message content provided" },
+        { status: 400 }
       );
     }
 
@@ -265,46 +304,73 @@ export async function POST(request) {
     console.log('Request payload structure:', Object.keys(aiRequestPayload));
     console.log('Message count:', aiRequestPayload.messages.length);
     
-    // Select the best endpoint using our load balancing algorithm instead of round-robin
-    const selectedEndpoint = selectEndpoint();
-    console.log(`Selected endpoint for request: ${selectedEndpoint}`);
+    // Implement retry logic for better reliability
+    let lastError = null;
+    let maxRetries = 2;
     
-    // Start timing the request for performance tracking
-    const requestStartTime = Date.now();
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Select the best endpoint using our load balancing algorithm
+        const selectedEndpoint = selectEndpoint();
+        console.log(`Attempt ${attempt}: Selected endpoint for request: ${selectedEndpoint}`);
+        
+        // Start timing the request for performance tracking
+        const requestStartTime = Date.now();
 
-    // Make the AI API call with API key in headers
-    const response = await axios.post(
-      selectedEndpoint,
-      aiRequestPayload,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        timeout: TIMEOUT_MS,
+        // Make the AI API call with API key in headers
+        const response = await axios.post(
+          selectedEndpoint,
+          aiRequestPayload,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`,
+            },
+            timeout: TIMEOUT_MS,
+          }
+        );
+
+        // Calculate response time and update endpoint stats for future load balancing decisions
+        const responseTime = Date.now() - requestStartTime;
+        updateEndpointStats(selectedEndpoint, true, responseTime);
+
+        console.log(`AI response received with status: ${response.status}, time: ${responseTime}ms`);
+
+        return NextResponse.json({
+          response: response.data.choices?.[0]?.message?.content || 'No response content',
+          tokenUsage: response.data.usage || {
+            total_tokens: 0,
+            prompt_tokens: 0,
+            completion_tokens: 0
+          }
+        });
+      } catch (error) {
+        lastError = error;
+        
+        // Update endpoint stats for failures if we know which endpoint failed
+        if (error.config?.url) {
+          updateEndpointStats(error.config.url, false, 0);
+          console.log(`Updated stats for ${error.config.url} to reflect failure`);
+        }
+
+        console.error(`Attempt ${attempt} failed:`, {
+          message: error.message,
+          status: error.response?.status,
+          code: error.code,
+          url: error.config?.url
+        });
+
+        // If this is not the last attempt, wait before retrying
+        if (attempt < maxRetries) {
+          const waitTime = attempt * 1000; // Progressive delay: 1s, 2s
+          console.log(`Waiting ${waitTime}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
       }
-    );
-
-    // Calculate response time and update endpoint stats for future load balancing decisions
-    const responseTime = Date.now() - requestStartTime;
-    updateEndpointStats(selectedEndpoint, true, responseTime);
-
-    console.log(`AI response received with status: ${response.status}, time: ${responseTime}ms`);
-
-    return NextResponse.json({
-      response: response.data.choices?.[0]?.message?.content || 'No response content',
-      tokenUsage: response.data.usage || {
-        total_tokens: 0,
-        prompt_tokens: 0,
-        completion_tokens: 0
-      }
-    });
-  } catch (error) {
-    // Update endpoint stats for failures if we know which endpoint failed
-    if (error.config?.url) {
-      updateEndpointStats(error.config.url, false, 0);
-      console.log(`Updated stats for ${error.config.url} to reflect failure`);
     }
+
+    // If we get here, all retries failed
+    const error = lastError;
 
     // Log detailed error information
     console.error('AI API Error:', {
@@ -345,6 +411,17 @@ export async function POST(request) {
         timestamp: new Date().toISOString()
       },
       { status: statusCode }
+    );
+  } catch (error) {
+    // Fallback error handler
+    console.error('Unexpected error in AI proxy:', error);
+    return NextResponse.json(
+      { 
+        error: 'Unexpected server error', 
+        details: { message: error.message },
+        timestamp: new Date().toISOString()
+      },
+      { status: 500 }
     );
   }
 }
