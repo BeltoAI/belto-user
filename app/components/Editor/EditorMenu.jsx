@@ -40,9 +40,19 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       icon: Plus,
       action: () => {
         if (joditInstance) {
-          const editorElement = joditInstance.editor;
-          const currentSize = parseInt(window.getComputedStyle(editorElement).fontSize);
-          editorElement.style.fontSize = `${currentSize + 2}px`;
+          try {
+            // Try to access the editor content area
+            const editorBody = joditInstance.editor?.body || joditInstance.element?.querySelector('.jodit-wysiwyg');
+            if (editorBody) {
+              const currentSize = parseInt(window.getComputedStyle(editorBody).fontSize) || 14;
+              editorBody.style.fontSize = `${currentSize + 2}px`;
+            } else {
+              // Fallback: use Jodit's built-in zoom if available
+              joditInstance.execCommand('fontSize', false, '18px');
+            }
+          } catch (error) {
+            console.log('Zoom in error:', error);
+          }
         }
       },
     },
@@ -51,9 +61,19 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       icon: Minus,
       action: () => {
         if (joditInstance) {
-          const editorElement = joditInstance.editor;
-          const currentSize = parseInt(window.getComputedStyle(editorElement).fontSize);
-          editorElement.style.fontSize = `${Math.max(currentSize - 2, 8)}px`;
+          try {
+            // Try to access the editor content area
+            const editorBody = joditInstance.editor?.body || joditInstance.element?.querySelector('.jodit-wysiwyg');
+            if (editorBody) {
+              const currentSize = parseInt(window.getComputedStyle(editorBody).fontSize) || 14;
+              editorBody.style.fontSize = `${Math.max(currentSize - 2, 8)}px`;
+            } else {
+              // Fallback: use Jodit's built-in zoom if available
+              joditInstance.execCommand('fontSize', false, '12px');
+            }
+          } catch (error) {
+            console.log('Zoom out error:', error);
+          }
         }
       },
     },
@@ -65,7 +85,32 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
     {
       label: "Full Screen",
       icon: Maximize2,
-      action: () => joditInstance?.execCommand('toggleFullSize'),
+      action: () => {
+        if (joditInstance) {
+          try {
+            // Try Jodit's built-in fullscreen command
+            if (joditInstance.toggleFullSize) {
+              joditInstance.toggleFullSize();
+            } else if (joditInstance.execCommand) {
+              joditInstance.execCommand('fullsize');
+            } else {
+              // Fallback: manual fullscreen
+              const editorContainer = joditInstance.container || joditInstance.element?.closest('.jodit-container');
+              if (editorContainer) {
+                if (editorContainer.requestFullscreen) {
+                  editorContainer.requestFullscreen();
+                } else if (editorContainer.webkitRequestFullscreen) {
+                  editorContainer.webkitRequestFullscreen();
+                } else if (editorContainer.mozRequestFullScreen) {
+                  editorContainer.mozRequestFullScreen();
+                }
+              }
+            }
+          } catch (error) {
+            console.log('Full screen error:', error);
+          }
+        }
+      },
     },
   ],
   help: [
