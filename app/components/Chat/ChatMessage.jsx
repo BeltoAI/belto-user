@@ -50,6 +50,7 @@ const ChatMessage = ({
   onDelete,
   liked,
   disliked,
+  reactionPending = false,
   isLoading,
   tokenUsage,
   limitReached,
@@ -68,7 +69,7 @@ const ChatMessage = ({
     }
   };
 
-  // Add message reaction buttons
+  // Add message reaction buttons with improved styling and transitions
   const renderReactionButtons = () => {
     if (!isBot) return null; // Only show reaction buttons for AI responses
     
@@ -76,29 +77,41 @@ const ChatMessage = ({
       <div className="flex space-x-2 mt-1">
         <button
           onClick={onLike}
-          className={`text-xs px-2 py-1 rounded ${
-            liked ? 'bg-blue-600 text-white' : 'bg-[#363636] hover:bg-[#464646] text-gray-300'
-          }`}
+          disabled={reactionPending}
+          className={`text-xs px-2 py-1 rounded transition-all duration-200 transform active:scale-95 ${
+            liked 
+              ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/25' 
+              : 'bg-[#363636] hover:bg-[#464646] text-gray-300 hover:shadow-md'
+          } ${reactionPending ? 'opacity-70 cursor-not-allowed' : ''}`}
           aria-label="Like this response"
         >
-          <span className="mr-1">👍</span>
+          <span className={`mr-1 transition-transform duration-200 ${liked ? 'scale-110' : ''} ${reactionPending ? 'animate-pulse' : ''}`}>
+            👍
+          </span>
           {liked ? 'Liked' : 'Like'}
+          {reactionPending && <span className="ml-1 inline-block w-2 h-2 bg-current rounded-full animate-pulse"></span>}
         </button>
         
         <button
           onClick={onDislike}
-          className={`text-xs px-2 py-1 rounded ${
-            disliked ? 'bg-red-600 text-white' : 'bg-[#363636] hover:bg-[#464646] text-gray-300'
-          }`}
+          disabled={reactionPending}
+          className={`text-xs px-2 py-1 rounded transition-all duration-200 transform active:scale-95 ${
+            disliked 
+              ? 'bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg shadow-red-500/25' 
+              : 'bg-[#363636] hover:bg-[#464646] text-gray-300 hover:shadow-md'
+          } ${reactionPending ? 'opacity-70 cursor-not-allowed' : ''}`}
           aria-label="Dislike this response"
         >
-          <span className="mr-1">👎</span>
+          <span className={`mr-1 transition-transform duration-200 ${disliked ? 'scale-110' : ''} ${reactionPending ? 'animate-pulse' : ''}`}>
+            👎
+          </span>
           {disliked ? 'Disliked' : 'Dislike'}
+          {reactionPending && <span className="ml-1 inline-block w-2 h-2 bg-current rounded-full animate-pulse"></span>}
         </button>
         
         <button
           onClick={onCopy}
-          className="bg-[#363636] hover:bg-[#464646] text-xs px-2 py-1 rounded text-gray-300"
+          className="bg-[#363636] hover:bg-[#464646] text-xs px-2 py-1 rounded text-gray-300 transition-all duration-200 hover:shadow-md active:scale-95"
           aria-label="Copy message"
         >
           <span className="mr-1">📋</span>
@@ -107,7 +120,7 @@ const ChatMessage = ({
         
         <button
           onClick={handleDelete}
-          className={`bg-[#363636] hover:bg-[#464646] text-xs px-2 py-1 rounded text-gray-300 ${
+          className={`bg-[#363636] hover:bg-[#464646] text-xs px-2 py-1 rounded text-gray-300 transition-all duration-200 hover:shadow-md active:scale-95 ${
             isDeleting ? 'opacity-50 cursor-not-allowed' : ''
           }`}
           disabled={isDeleting}
@@ -120,7 +133,7 @@ const ChatMessage = ({
         {tokenUsage && (
           <button
             onClick={() => setShowTokenInfo(!showTokenInfo)}
-            className="bg-[#363636] hover:bg-[#464646] text-xs px-2 py-1 rounded text-gray-300"
+            className="bg-[#363636] hover:bg-[#464646] text-xs px-2 py-1 rounded text-gray-300 transition-all duration-200 hover:shadow-md active:scale-95"
             aria-label="Show token usage information"
           >
             <span className="mr-1">ℹ️</span>

@@ -58,6 +58,7 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel }
     reactions,
     toggleLike: handleToggleLike,
     toggleDislike: handleToggleDislike,
+    isPending: isReactionPending
   } = useMessageReactions(userId, currentSessionId, studentId);
   // Use our lecture context hook to get materials
   const { lectureMaterials, isLoadingMaterials } = useLectureContext(lectureId, currentSessionId);
@@ -321,6 +322,7 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel }
                   onDelete={() => handleDelete(index)}
                   liked={reactions[message.id] === 'like'}
                   disliked={reactions[message.id] === 'dislike'}
+                  reactionPending={isReactionPending(message.id)}
                   tokenUsage={message.isBot ? (message.tokenUsage || null) : null}
                 />
               ))}
