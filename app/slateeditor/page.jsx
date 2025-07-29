@@ -73,6 +73,7 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showCollaboration, setShowCollaboration] = useState(false);
   const [showCollaborationsList, setShowCollaborationsList] = useState(false);
+  const [isEditorReady, setIsEditorReady] = useState(false);
   const { editorContent, setEditorContent, addVersion } = useEditorStore();
   const [eventSource, setEventSource] = useState(null);
   const lastUpdateTime = useRef(Date.now());
@@ -600,7 +601,14 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
     return userColors[email];
   };
 
-  const menuItems = getMenuItems(editor.current?.editor, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations);
+  const menuItems = useMemo(() => {
+    // Only create menu items if the editor is fully initialized
+    if (isEditorReady && editor.current?.editor) {
+      return getMenuItems(editor.current.editor, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations);
+    }
+    // Return menu items with null joditInstance if editor not ready
+    return getMenuItems(null, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations);
+  }, [isEditorReady, editor.current?.editor, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations]);
 
   // Modify config to disable copy/paste buttons if not allowed
   const config = useMemo(() => ({
@@ -698,6 +706,11 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
           });
           return false;
         }
+      },
+      afterInit: (jodit) => {
+        // Set editor as ready when fully initialized
+        console.log('Jodit editor initialized:', jodit);
+        setIsEditorReady(true);
       }
     }
   }), [isMobile, allowCopyPaste]);

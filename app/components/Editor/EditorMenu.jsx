@@ -39,20 +39,32 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       label: "Zoom In",
       icon: Plus,
       action: () => {
-        if (joditInstance) {
-          try {
-            // Try to access the editor content area
-            const editorBody = joditInstance.editor?.body || joditInstance.element?.querySelector('.jodit-wysiwyg');
-            if (editorBody) {
-              const currentSize = parseInt(window.getComputedStyle(editorBody).fontSize) || 14;
-              editorBody.style.fontSize = `${currentSize + 2}px`;
-            } else {
-              // Fallback: use Jodit's built-in zoom if available
-              joditInstance.execCommand('fontSize', false, '18px');
+        console.log('Zoom In clicked, joditInstance:', joditInstance);
+        if (!joditInstance) {
+          console.log('Editor not ready yet, zoom in unavailable');
+          return;
+        }
+        try {
+          // Access the editor's wysiwyg area correctly
+          const editorElement = joditInstance.container.querySelector('.jodit-wysiwyg');
+          console.log('editorElement found:', editorElement);
+          if (editorElement) {
+            const currentSize = parseInt(window.getComputedStyle(editorElement).fontSize) || 14;
+            console.log('Current font size:', currentSize);
+            const newSize = currentSize + 2;
+            editorElement.style.fontSize = `${newSize}px`;
+            console.log('New font size set:', `${newSize}px`);
+          } else {
+            // Fallback: try direct iframe access
+            const iframe = joditInstance.container.querySelector('.jodit-wysiwyg_iframe');
+            if (iframe && iframe.contentDocument) {
+              const body = iframe.contentDocument.body;
+              const currentSize = parseInt(window.getComputedStyle(body).fontSize) || 14;
+              body.style.fontSize = `${currentSize + 2}px`;
             }
-          } catch (error) {
-            console.log('Zoom in error:', error);
           }
+        } catch (error) {
+          console.log('Zoom in error:', error);
         }
       },
     },
@@ -60,20 +72,32 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       label: "Zoom Out",
       icon: Minus,
       action: () => {
-        if (joditInstance) {
-          try {
-            // Try to access the editor content area
-            const editorBody = joditInstance.editor?.body || joditInstance.element?.querySelector('.jodit-wysiwyg');
-            if (editorBody) {
-              const currentSize = parseInt(window.getComputedStyle(editorBody).fontSize) || 14;
-              editorBody.style.fontSize = `${Math.max(currentSize - 2, 8)}px`;
-            } else {
-              // Fallback: use Jodit's built-in zoom if available
-              joditInstance.execCommand('fontSize', false, '12px');
+        console.log('Zoom Out clicked, joditInstance:', joditInstance);
+        if (!joditInstance) {
+          console.log('Editor not ready yet, zoom out unavailable');
+          return;
+        }
+        try {
+          // Access the editor's wysiwyg area correctly
+          const editorElement = joditInstance.container.querySelector('.jodit-wysiwyg');
+          console.log('editorElement found:', editorElement);
+          if (editorElement) {
+            const currentSize = parseInt(window.getComputedStyle(editorElement).fontSize) || 14;
+            console.log('Current font size:', currentSize);
+            const newSize = Math.max(currentSize - 2, 8);
+            editorElement.style.fontSize = `${newSize}px`;
+            console.log('New font size set:', `${newSize}px`);
+          } else {
+            // Fallback: try direct iframe access
+            const iframe = joditInstance.container.querySelector('.jodit-wysiwyg_iframe');
+            if (iframe && iframe.contentDocument) {
+              const body = iframe.contentDocument.body;
+              const currentSize = parseInt(window.getComputedStyle(body).fontSize) || 14;
+              body.style.fontSize = `${Math.max(currentSize - 2, 8)}px`;
             }
-          } catch (error) {
-            console.log('Zoom out error:', error);
           }
+        } catch (error) {
+          console.log('Zoom out error:', error);
         }
       },
     },
@@ -86,29 +110,51 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       label: "Full Screen",
       icon: Maximize2,
       action: () => {
-        if (joditInstance) {
-          try {
-            // Try Jodit's built-in fullscreen command
-            if (joditInstance.toggleFullSize) {
-              joditInstance.toggleFullSize();
-            } else if (joditInstance.execCommand) {
-              joditInstance.execCommand('fullsize');
-            } else {
-              // Fallback: manual fullscreen
-              const editorContainer = joditInstance.container || joditInstance.element?.closest('.jodit-container');
-              if (editorContainer) {
+        console.log('Full Screen clicked, joditInstance:', joditInstance);
+        if (!joditInstance) {
+          console.log('Editor not ready yet, fullscreen unavailable');
+          return;
+        }
+        try {
+          // Use Jodit's built-in fullscreen toggle
+          if (typeof joditInstance.toggleFullSize === 'function') {
+            console.log('Using toggleFullSize method');
+            joditInstance.toggleFullSize();
+          } else if (typeof joditInstance.execCommand === 'function') {
+            console.log('Using execCommand fullsize');
+            joditInstance.execCommand('fullsize');
+          } else {
+            console.log('Using manual fullscreen via container');
+            // Fallback: manual fullscreen on the container
+            const editorContainer = joditInstance.container;
+            if (editorContainer) {
+              if (!document.fullscreenElement) {
+                // Enter fullscreen
                 if (editorContainer.requestFullscreen) {
                   editorContainer.requestFullscreen();
                 } else if (editorContainer.webkitRequestFullscreen) {
                   editorContainer.webkitRequestFullscreen();
                 } else if (editorContainer.mozRequestFullScreen) {
                   editorContainer.mozRequestFullScreen();
+                } else if (editorContainer.msRequestFullscreen) {
+                  editorContainer.msRequestFullscreen();
+                }
+              } else {
+                // Exit fullscreen
+                if (document.exitFullscreen) {
+                  document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                  document.webkitExitFullscreen();
+                } else if (document.mozCancelFullScreen) {
+                  document.mozCancelFullScreen();
+                } else if (document.msExitFullscreen) {
+                  document.msExitFullscreen();
                 }
               }
             }
-          } catch (error) {
-            console.log('Full screen error:', error);
           }
+        } catch (error) {
+          console.log('Full screen error:', error);
         }
       },
     },
