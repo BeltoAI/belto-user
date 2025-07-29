@@ -600,7 +600,7 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
     return userColors[email];
   };
 
-  const menuItems = getMenuItems(editor, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations);
+  const menuItems = getMenuItems(editor.current?.editor, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations);
 
   // Modify config to disable copy/paste buttons if not allowed
   const config = useMemo(() => ({
