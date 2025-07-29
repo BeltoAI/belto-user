@@ -9,6 +9,7 @@ import 'simplebar-react/dist/simplebar.min.css';
 import PropTypes from 'prop-types';
 import ChatMessage from '../components/Chat/ChatMessage';
 import ChatInput from '../components/Chat/ChatInput';
+import ChatSettings from '../components/Chat/ChatSettings';
 import useChatStore from '@/store/chatStore';
 import { LoadingMessage } from './components/LoadingMessage';
 import { customScrollbarStyles } from './styles/scrollbar';
@@ -239,55 +240,17 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel }
     }, toast);
   };
 
-  // Display AI preferences badge if available
-  const renderAIBadge = () => {
-    if (!aiPreferences) return null;
-    
-    // Calculate usage percentages for visual indicators
-    const tokenLimit = aiPreferences.maxTokens || 2000;
-    const promptLimit = aiPreferences.numPrompts || 5;
-    const tokenUsagePercent = Math.min(100, Math.round((totalTokenUsage / tokenLimit) * 100));
-    const promptUsagePercent = Math.min(100, Math.round((totalPrompts / promptLimit) * 100));
-    
-    return (
-      <div className="mb-2 mx-4 py-2 px-3 bg-[#262626] rounded-md flex flex-wrap items-center gap-2">
-        {aiPreferences.model && (
-          <span className="text-xs bg-[#363636] px-2 py-1 rounded">
-            <span className="text-[#FFB800]">AI:</span> {aiPreferences.model}
-          </span>
-        )}
-        
-        <span className="text-xs bg-[#363636] px-2 py-1 rounded">
-          <span className="text-[#FFB800]">Temp:</span> {aiPreferences.temperature}
-        </span>
-        
-        <span className="text-xs bg-[#363636] px-2 py-1 rounded">
-          <span className="text-[#FFB800]">Tokens:</span> {totalTokenUsage}/{tokenLimit}
-          <div className="w-full h-1 bg-gray-700 mt-1 rounded-full overflow-hidden">
-            <div 
-              className={`h-full ${tokenUsagePercent > 75 ? 'bg-red-500' : 'bg-green-500'}`} 
-              style={{ width: `${tokenUsagePercent}%` }}
-            ></div>
-          </div>
-        </span>
-        
-        <span className="text-xs bg-[#363636] px-2 py-1 rounded">
-          <span className="text-[#FFB800]">Prompts:</span> {totalPrompts}/{promptLimit}
-          <div className="w-full h-1 bg-gray-700 mt-1 rounded-full overflow-hidden">
-            <div 
-              className={`h-full ${promptUsagePercent > 75 ? 'bg-red-500' : 'bg-green-500'}`} 
-              style={{ width: `${promptUsagePercent}%` }}
-            ></div>
-          </div>
-        </span>
-      </div>
-    );
-  };
-
   return (
     <div className="flex flex-col h-full">
       <style>{customScrollbarStyles}</style>
-      {aiPreferences && renderAIBadge()}
+      {aiPreferences && (
+        <ChatSettings 
+          aiPreferences={aiPreferences}
+          tokenCount={totalTokenUsage}
+          messageCount={totalPrompts}
+          sessionId={currentSessionId}
+        />
+      )}
       <SimpleBar 
         ref={simpleBarRef}
         className="flex-1 overflow-y-auto" 
@@ -338,6 +301,10 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel }
         handleFileUpload={handleFileUpload}
         isGenerating={isGenerating}
         disableFileUpload={aiPreferences?.processingRules?.allowUploads === false}
+        tokenCount={totalTokenUsage}
+        tokenLimit={aiPreferences?.tokenPredictionLimit}
+        messageCount={totalPrompts}
+        messageLimit={aiPreferences?.numPrompts}
         sessionId={currentSessionId}
         userId={userId}
       />

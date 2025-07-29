@@ -25,6 +25,13 @@ const useChatStore = create((set, get) => ({
     lastMessageUsage: null,
     promptCount: 0
   },
+  
+  // Persistent session stats
+  sessionStats: {
+    totalTokenUsage: 0,
+    totalPrompts: 0,
+    startTime: null,
+  },
 
   // Setters
   setMessages: (newMessages) => set(state => {
@@ -54,6 +61,67 @@ const useChatStore = create((set, get) => ({
   setMessageSending: (isMessageSending) => set({ isMessageSending }),
   setNavigating: (isNavigating) => set({ isNavigating }),
   setProcessingMessage: (processingMessage) => set({ processingMessage }),
+
+  // Token usage management
+  updateTokenUsage: (tokenUsage) => set(state => ({
+    tokenUsage: {
+      ...state.tokenUsage,
+      sessionTotalTokens: state.tokenUsage.sessionTotalTokens + (tokenUsage?.total_tokens || 0),
+      lastMessageUsage: tokenUsage
+    },
+    sessionStats: {
+      ...state.sessionStats,
+      totalTokenUsage: state.sessionStats.totalTokenUsage + (tokenUsage?.total_tokens || 0)
+    }
+  })),
+
+  updatePromptCount: () => set(state => ({
+    tokenUsage: {
+      ...state.tokenUsage,
+      promptCount: state.tokenUsage.promptCount + 1
+    },
+    sessionStats: {
+      ...state.sessionStats,
+      totalPrompts: state.sessionStats.totalPrompts + 1
+    }
+  })),
+
+  // Reset session stats but keep persistent stats
+  resetSessionStats: () => set(state => ({
+    tokenUsage: {
+      sessionTotalTokens: 0,
+      lastMessageUsage: null,
+      promptCount: 0
+    }
+  })),
+
+  // Initialize session stats
+  initializeSessionStats: (sessionId) => set(state => {
+    // Get cached stats for this session from localStorage
+    const cachedStats = localStorage.getItem(`sessionStats_${sessionId}`);
+    const parsedStats = cachedStats ? JSON.parse(cachedStats) : {
+      totalTokenUsage: 0,
+      totalPrompts: 0,
+      startTime: new Date().toISOString()
+    };
+
+    return {
+      sessionStats: parsedStats,
+      tokenUsage: {
+        sessionTotalTokens: parsedStats.totalTokenUsage,
+        lastMessageUsage: null,
+        promptCount: parsedStats.totalPrompts
+      }
+    };
+  }),
+
+  // Save session stats to localStorage
+  saveSessionStats: (sessionId) => {
+    const state = get();
+    if (sessionId && state.sessionStats) {
+      localStorage.setItem(`sessionStats_${sessionId}`, JSON.stringify(state.sessionStats));
+    }
+  },
 
   // Actions
   addMessage: (message) => set(state => {

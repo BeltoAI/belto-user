@@ -40,6 +40,22 @@ export const useMessageReactions = (userId, sessionId, studentId = null) => {
   const toggleLike = async (messageId) => {
     if (!userId || !sessionId || !messageId) return;
     
+    // Optimistic UI update - immediately update the state for smooth UX
+    const currentReaction = reactions[messageId];
+    const newReaction = currentReaction === 'like' ? null : 'like';
+    
+    setReactions(prevReactions => {
+      const newReactions = { ...prevReactions };
+      
+      if (newReaction === null) {
+        delete newReactions[messageId];
+      } else {
+        newReactions[messageId] = 'like';
+      }
+      
+      return newReactions;
+    });
+    
     try {
       const payload = {
         userId,
@@ -67,7 +83,7 @@ export const useMessageReactions = (userId, sessionId, studentId = null) => {
       
       const data = await response.json();
       
-      // Update local state based on server response
+      // Verify server response matches our optimistic update
       setReactions(prevReactions => {
         const newReactions = { ...prevReactions };
         
@@ -83,12 +99,41 @@ export const useMessageReactions = (userId, sessionId, studentId = null) => {
     } catch (err) {
       console.error('Error toggling like:', err);
       setError(err.message);
+      
+      // Revert optimistic update on error
+      setReactions(prevReactions => {
+        const newReactions = { ...prevReactions };
+        
+        if (currentReaction) {
+          newReactions[messageId] = currentReaction;
+        } else {
+          delete newReactions[messageId];
+        }
+        
+        return newReactions;
+      });
     }
   };
 
   // Toggle dislike for a message
   const toggleDislike = async (messageId) => {
     if (!userId || !sessionId || !messageId) return;
+    
+    // Optimistic UI update - immediately update the state for smooth UX
+    const currentReaction = reactions[messageId];
+    const newReaction = currentReaction === 'dislike' ? null : 'dislike';
+    
+    setReactions(prevReactions => {
+      const newReactions = { ...prevReactions };
+      
+      if (newReaction === null) {
+        delete newReactions[messageId];
+      } else {
+        newReactions[messageId] = 'dislike';
+      }
+      
+      return newReactions;
+    });
     
     try {
       const payload = {
@@ -117,7 +162,7 @@ export const useMessageReactions = (userId, sessionId, studentId = null) => {
       
       const data = await response.json();
       
-      // Update local state based on server response
+      // Verify server response matches our optimistic update
       setReactions(prevReactions => {
         const newReactions = { ...prevReactions };
         
@@ -133,6 +178,19 @@ export const useMessageReactions = (userId, sessionId, studentId = null) => {
     } catch (err) {
       console.error('Error toggling dislike:', err);
       setError(err.message);
+      
+      // Revert optimistic update on error
+      setReactions(prevReactions => {
+        const newReactions = { ...prevReactions };
+        
+        if (currentReaction) {
+          newReactions[messageId] = currentReaction;
+        } else {
+          delete newReactions[messageId];
+        }
+        
+        return newReactions;
+      });
     }
   };
 

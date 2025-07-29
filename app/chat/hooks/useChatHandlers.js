@@ -24,6 +24,9 @@ export const useChatHandlers = (
   const [totalTokenUsage, setTotalTokenUsage] = useState(0);
   const [totalPrompts, setTotalPrompts] = useState(0);
 
+  // Add session stats persistence
+  const [sessionStatsInitialized, setSessionStatsInitialized] = useState(false);
+
   // Add useEffect to fetch username and profile image when component mounts
   useEffect(() => {
     const fetchUserData = async () => {
@@ -52,20 +55,46 @@ export const useChatHandlers = (
 
   // Calculate initial values when component mounts
   useEffect(() => {
+    // Initialize session stats from localStorage if available
+    if (currentSessionId && !sessionStatsInitialized) {
+      const cachedStats = localStorage.getItem(`sessionStats_${currentSessionId}`);
+      if (cachedStats) {
+        const parsedStats = JSON.parse(cachedStats);
+        setTotalTokenUsage(parsedStats.totalTokenUsage || 0);
+        setTotalPrompts(parsedStats.totalPrompts || 0);
+      }
+      setSessionStatsInitialized(true);
+    }
+    
     // Sum up token usage from existing messages
     const tokenSum = messages.reduce((sum, msg) => {
       if (msg.isBot && msg.tokenUsage) {
         return sum + (msg.tokenUsage.total_tokens || 0);
-      }
+      }    
       return sum;
     }, 0);
     
     // Count user messages (prompts)
     const promptCount = messages.filter(msg => !msg.isBot).length;
     
-    setTotalTokenUsage(tokenSum);
-    setTotalPrompts(promptCount);
-  }, [messages]);
+    // Update token usage and prompts based on messages
+    if (tokenSum > totalTokenUsage) {
+      setTotalTokenUsage(tokenSum);
+    }
+    if (promptCount > totalPrompts) {
+      setTotalPrompts(promptCount);
+    }
+    
+    // Save to localStorage for persistence
+    if (currentSessionId) {
+      const statsToSave = {
+        totalTokenUsage: Math.max(tokenSum, totalTokenUsage),
+        totalPrompts: Math.max(promptCount, totalPrompts),
+        startTime: new Date().toISOString()
+      };
+      localStorage.setItem(`sessionStats_${currentSessionId}`, JSON.stringify(statsToSave));
+    }
+  }, [messages, currentSessionId, sessionStatsInitialized, totalTokenUsage, totalPrompts]);
 
   const handleMessageUpdate = useCallback((updatedMessages) => {
     setMessages(updatedMessages);
@@ -209,9 +238,20 @@ export const useChatHandlers = (
         setMessages(prevMessages => [...prevMessages, limitMessage]);
       } else {
         // Add bot message and update total token usage
+        const newTotalTokens = totalTokenUsage + (messageTokenUsage?.total_tokens || 0);
         setTotalTokenUsage(newTotalTokens);
         updateTokenUsage(messageTokenUsage);
         handleMessageUpdate([...messages, userMessage, botMessage]);
+
+        // Update localStorage stats
+        if (currentSessionId) {
+          const statsToSave = {
+            totalTokenUsage: newTotalTokens,
+            totalPrompts: totalPrompts,
+            startTime: new Date().toISOString()
+          };
+          localStorage.setItem(`sessionStats_${currentSessionId}`, JSON.stringify(statsToSave));
+        }
 
         const botRes = await fetch('/api/chat', {
           method: 'POST',
