@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import Loading from './loading';
-import useChatStore from '@/store/chatStore';
 // Initial state
 const initialState = {
   layout: {
@@ -74,9 +73,6 @@ const LayoutContent = () => {
   const searchParams = useSearchParams();
   const [initialRender, setInitialRender] = useState(true);
   const router = useRouter();
-  
-  // Add chat store for session stats tracking
-  const { currentSessionId, setCurrentSessionId, initializeSessionStats } = useChatStore();
 
   useEffect(() => {
     const handleInitialLoad = async () => {
@@ -85,15 +81,6 @@ const LayoutContent = () => {
       const inputText = searchParams.get('inputText');
       const selectedFilesStr = searchParams.get('selectedFiles');
       const sessionId = searchParams.get('sessionId');
-
-      // Initialize session stats if sessionId is provided
-      if (sessionId) {
-        setCurrentSessionId(sessionId);
-        // Initialize session stats from localStorage
-        if (initializeSessionStats) {
-          initializeSessionStats(sessionId);
-        }
-      }
 
       if (inputText || selectedFilesStr) {
         try {

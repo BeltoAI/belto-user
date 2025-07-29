@@ -189,26 +189,6 @@ const BeltoMainPage = () => {
       // Send bot message
       await sendBotMessage(user._id, currentSessionId, botMessagePayload);
 
-      // Save session stats before navigation to preserve token/prompt counts
-      if (currentSessionId) {
-        const existingStats = localStorage.getItem(`sessionStats_${currentSessionId}`);
-        const stats = existingStats ? JSON.parse(existingStats) : {
-          totalTokenUsage: 0,
-          totalPrompts: 0,
-          startTime: new Date().toISOString()
-        };
-        
-        // Update with new token usage if available
-        if (data?.tokenUsage?.total_tokens) {
-          stats.totalTokenUsage += data.tokenUsage.total_tokens;
-        }
-        
-        // Increment prompt count (user just sent a message)
-        stats.totalPrompts += 1;
-        
-        localStorage.setItem(`sessionStats_${currentSessionId}`, JSON.stringify(stats));
-      }
-
       // Clear inputs and navigate
       setInputText('');
       setSelectedFiles([]);
