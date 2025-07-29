@@ -24,7 +24,7 @@ const BeltoMainPage = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [selectedTool, setSelectedTool] = useState('Belto Sheets');
+  const [selectedTool, setSelectedTool] = useState('Belto Doc');
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [inputText, setInputText] = useState('');
   const [classes, setClasses] = useState([]);
@@ -45,26 +45,28 @@ const BeltoMainPage = () => {
           title: "Belto Doc",
           description: "Get comprehensive framework solutions instantly with Belto Doc",
           acceptedFiles: ".doc,.docx,.pdf,.txt",
-          icon: "📄",
-          disabled: true
+          icon: "📄"
         },
         {
           title: "Belto Sheets",
           description: "Analyze and process spreadsheet data with AI assistance",
           acceptedFiles: ".csv,.xlsx,.xls",
-          icon: "📊"
+          icon: "📊",
+          disabled: true
         },
         {
           title: "Belto Slides",
           description: "Create and enhance presentations with AI-powered tools",
           acceptedFiles: ".ppt,.pptx,.pdf",
-          icon: "�️"
+          icon: "�️",
+          disabled: true
         },
         {
           title: "Belto Code",
           description: "Generate, review, and optimize code with AI assistance",
           acceptedFiles: ".js,.jsx,.ts,.tsx,.py,.java,.cpp,.html,.css",
-          icon: "💻"
+          icon: "💻",
+          disabled: true
         }
       ]
     }
