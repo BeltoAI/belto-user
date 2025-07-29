@@ -24,7 +24,7 @@ const BeltoMainPage = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [selectedTool, setSelectedTool] = useState('Doc');
+  const [selectedTool, setSelectedTool] = useState('Belto Sheets');
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [inputText, setInputText] = useState('');
   const [classes, setClasses] = useState([]);
@@ -39,42 +39,32 @@ const BeltoMainPage = () => {
   // Tools data
   const tools = [
     {
-      category: "TOOLS - FOR EVERYONE",
+      category: "BELTO AI OPTIONS",
       items: [
         {
-          title: "BELTO - Form",
-          description: "Efficiently fill out forms with Belto Form's easy-to-use tool",
-          acceptedFiles: ".pdf,.doc,.docx,.xls,.xlsx",
-          icon: "📝"
-        },
-        {
-          title: "BELTO - Doc",
+          title: "Belto Doc",
           description: "Get comprehensive framework solutions instantly with Belto Doc",
           acceptedFiles: ".doc,.docx,.pdf,.txt",
-          icon: "📄"
-        }
-      ]
-    },
-    {
-      category: "TOOLS - FOR ENTERPRISE",
-      items: [
+          icon: "📄",
+          disabled: true
+        },
         {
-          title: "BELTO - ESG",
-          description: "Get detailed ESG reports instantly to track sustainability efforts",
+          title: "Belto Sheets",
+          description: "Analyze and process spreadsheet data with AI assistance",
           acceptedFiles: ".csv,.xlsx,.xls",
           icon: "📊"
         },
         {
-          title: "BELTO - CRM",
-          description: "Improve operations with automated processes",
-          acceptedFiles: ".csv,.json,.xml",
-          icon: "🔄"
+          title: "Belto Slides",
+          description: "Create and enhance presentations with AI-powered tools",
+          acceptedFiles: ".ppt,.pptx,.pdf",
+          icon: "�️"
         },
         {
-          title: "BELTO - ERP",
-          description: "Automate tasks and gain insights for enhanced customer satisfaction",
-          acceptedFiles: ".csv,.xlsx,.json",
-          icon: "⚙️"
+          title: "Belto Code",
+          description: "Generate, review, and optimize code with AI assistance",
+          acceptedFiles: ".js,.jsx,.ts,.tsx,.py,.java,.cpp,.html,.css",
+          icon: "💻"
         }
       ]
     }
@@ -83,7 +73,7 @@ const BeltoMainPage = () => {
   // Get the current tool configuration
   const getCurrentToolConfig = () => {
     for (const section of tools) {
-      const tool = section.items.find(item => item.title.split(' - ')[1] === selectedTool);
+      const tool = section.items.find(item => item.title === selectedTool);
       if (tool) return tool;
     }
     return null;
