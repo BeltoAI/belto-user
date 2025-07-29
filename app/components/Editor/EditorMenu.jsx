@@ -161,9 +161,12 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
   ],
   help: [
     {
-      label: "Documentation",
+      label: "Support",
       icon: FileText,
-      action: () => alert("Documentation coming soon!"),
+      action: () => {
+        // Open email client with support email
+        window.location.href = "mailto:support@belto.world?subject=Belto%20Doc%20Editor%20Support%20Request";
+      },
     },
     {
       label: "Keyboard Shortcuts",
@@ -173,7 +176,10 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
     {
       label: "About",
       icon: HelpCircle,
-      action: () => alert("Belto Doc Editor v1.0"),
+      action: () => {
+        // Open Belto website in a new tab
+        window.open("https://website-five-brown-57.vercel.app/", "_blank");
+      },
     },
   ],
   versions: [
