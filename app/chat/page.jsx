@@ -20,7 +20,7 @@ import { useLectureContext } from './hooks/useLectureContext';
 import { LectureMaterials } from './components/LectureMaterials';
 
 // Create a wrapper component that uses searchParams
-function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel }) {
+function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel, initialSessionId }) {
   const chatContainerRef = useRef(null);
   const fileInputRef = useRef(null);
   const processingRef = useRef(false);
@@ -143,7 +143,8 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel }
         setHistoryLoaded(false);
         const history = await fetchChatHistory();
         const updatedHistory = history.map(msg => {
-          if (msg.isBot && !msg.tokenUsage) {
+          // Only add default tokenUsage if the field is completely missing
+          if (msg.isBot && !msg.hasOwnProperty('tokenUsage')) {
             return {
               ...msg,
               tokenUsage: {
@@ -156,6 +157,7 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel }
           return msg;
         });
         
+        console.log('Loading chat history with token usage:', updatedHistory); // Debug log
         setMessages(updatedHistory);
         setHistoryLoaded(true);
         
@@ -181,6 +183,15 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel }
       setStudentId(studentIdParam);
     }
   }, [searchParams]);
+
+  // Set current session ID from prop or URL params
+  useEffect(() => {
+    const sessionId = initialSessionId || searchParams.get('sessionId');
+    if (sessionId && sessionId !== currentSessionId) {
+      console.log('Setting session ID:', sessionId);
+      setCurrentSessionId(sessionId);
+    }
+  }, [initialSessionId, searchParams, currentSessionId, setCurrentSessionId]);
 
   const handleCopy = (index) => {
     navigator.clipboard.writeText(messages[index].message);
@@ -378,6 +389,7 @@ ChatPage.propTypes = {
   ),
   isWideView: PropTypes.bool,
   selectedModel: PropTypes.string,
+  initialSessionId: PropTypes.string,
 };
 
 ChatPage.defaultProps = {
@@ -385,6 +397,7 @@ ChatPage.defaultProps = {
   selectedFiles: [],
   isWideView: false,
   selectedModel: 'Llama 3',
+  initialSessionId: null,
 };
 
 export default ChatPage;

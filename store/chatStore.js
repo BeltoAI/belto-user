@@ -154,7 +154,7 @@ const useChatStore = create((set, get) => ({
     }
 
     try {
-      const response = await fetch(`/api/chat/history?userId=${userId}&sessionId=${sessionId}`, {
+      const response = await fetch(`/api/chat?sessionId=${sessionId}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -166,6 +166,7 @@ const useChatStore = create((set, get) => ({
 
       const data = await response.json();
       const messages = data.messages || [];
+      console.log('Loaded chat history:', messages); // Debug log
       set({ messages });
       return messages;
     } catch (error) {

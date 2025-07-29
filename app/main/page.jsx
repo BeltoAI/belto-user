@@ -175,7 +175,7 @@ const BeltoMainPage = () => {
         }
       });
 
-      // Create bot message payload
+      // Create bot message payload with token usage
       const botMessagePayload = {
         isBot: true,
         avatar: '/logo.png',
@@ -183,7 +183,12 @@ const BeltoMainPage = () => {
         message: data?.response || "I couldn't generate a response. Please try again.",
         suggestions: [],
         attachments: [],
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        tokenUsage: data?.tokenUsage || {
+          total_tokens: 0,
+          prompt_tokens: 0,
+          completion_tokens: 0
+        }
       };
 
       // Send bot message
