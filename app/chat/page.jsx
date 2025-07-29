@@ -141,8 +141,12 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel, 
       try {
         setIsSessionLoading(true);
         setHistoryLoaded(false);
+        
+        // Implement progressive loading - load latest 50 messages first for better performance
         const history = await fetchChatHistory();
-        const updatedHistory = history.map(msg => {
+        const latestMessages = history.slice(-50); // Only show latest 50 messages initially
+        
+        const updatedHistory = latestMessages.map(msg => {
           // Only add default tokenUsage if the field is completely missing
           if (msg.isBot && !msg.hasOwnProperty('tokenUsage')) {
             return {
@@ -251,6 +255,27 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel, 
     }, toast);
   };
 
+  // Calculate session duration
+  const calculateSessionTime = () => {
+    if (!messages || messages.length === 0) return '0m';
+    
+    const firstMessage = messages[0];
+    const lastMessage = messages[messages.length - 1];
+    
+    const startTime = new Date(firstMessage.timestamp);
+    const endTime = new Date(lastMessage.timestamp);
+    const diffMs = endTime - startTime;
+    
+    if (diffMs < 60000) return '<1m'; // Less than 1 minute
+    
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 60) return `${diffMins}m`;
+    
+    const diffHours = Math.floor(diffMins / 60);
+    const remainingMins = diffMins % 60;
+    return remainingMins > 0 ? `${diffHours}h ${remainingMins}m` : `${diffHours}h`;
+  };
+
   // Display AI preferences badge if available
   const renderAIBadge = () => {
     if (!aiPreferences) return null;
@@ -260,21 +285,24 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel, 
     const promptLimit = aiPreferences.numPrompts || 5;
     const tokenUsagePercent = Math.min(100, Math.round((totalTokenUsage / tokenLimit) * 100));
     const promptUsagePercent = Math.min(100, Math.round((totalPrompts / promptLimit) * 100));
+    const sessionTime = calculateSessionTime();
     
     return (
       <div className="mb-2 mx-4 py-2 px-3 bg-[#262626] rounded-md flex flex-wrap items-center gap-2">
         {aiPreferences.model && (
-          <span className="text-xs bg-[#363636] px-2 py-1 rounded">
+          <span className="text-xs bg-[#363636] px-2 py-1 rounded min-w-[100px] text-center">
             <span className="text-[#FFB800]">AI:</span> {aiPreferences.model}
           </span>
         )}
         
-        <span className="text-xs bg-[#363636] px-2 py-1 rounded">
+        <span className="text-xs bg-[#363636] px-2 py-1 rounded min-w-[100px] text-center">
           <span className="text-[#FFB800]">Temp:</span> {aiPreferences.temperature}
         </span>
         
-        <span className="text-xs bg-[#363636] px-2 py-1 rounded">
-          <span className="text-[#FFB800]">Tokens:</span> {totalTokenUsage}/{tokenLimit}
+        <span className="text-xs bg-[#363636] px-2 py-1 rounded min-w-[120px]">
+          <div className="text-center">
+            <span className="text-[#FFB800]">Tokens:</span> {totalTokenUsage}/{tokenLimit}
+          </div>
           <div className="w-full h-1 bg-gray-700 mt-1 rounded-full overflow-hidden">
             <div 
               className={`h-full ${tokenUsagePercent > 75 ? 'bg-red-500' : 'bg-green-500'}`} 
@@ -283,14 +311,21 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel, 
           </div>
         </span>
         
-        <span className="text-xs bg-[#363636] px-2 py-1 rounded">
-          <span className="text-[#FFB800]">Prompts:</span> {totalPrompts}/{promptLimit}
+        <span className="text-xs bg-[#363636] px-2 py-1 rounded min-w-[120px]">
+          <div className="text-center">
+            <span className="text-[#FFB800]">Prompts:</span> {totalPrompts}/{promptLimit}
+          </div>
           <div className="w-full h-1 bg-gray-700 mt-1 rounded-full overflow-hidden">
             <div 
               className={`h-full ${promptUsagePercent > 75 ? 'bg-red-500' : 'bg-green-500'}`} 
               style={{ width: `${promptUsagePercent}%` }}
             ></div>
           </div>
+        </span>
+
+        {/* New Time field */}
+        <span className="text-xs bg-[#363636] px-2 py-1 rounded min-w-[100px] text-center">
+          <span className="text-[#FFB800]">Time:</span> {sessionTime}
         </span>
       </div>
     );

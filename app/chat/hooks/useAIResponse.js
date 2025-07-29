@@ -98,7 +98,13 @@ export const useAIResponse = () => {
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify(requestBody),
+            body: JSON.stringify({
+              ...requestBody,
+              preferences: {
+                ...requestBody.preferences,
+                streaming: aiPreferences?.streaming || false
+              }
+            }),
           });
 
           if (response.ok) {
@@ -257,7 +263,10 @@ export const useAIResponse = () => {
             body: JSON.stringify({
               message,
               sessionId,
-              preferences,
+              preferences: {
+                ...preferences,
+                streaming: preferences?.streaming || false
+              },
               history: formattedHistory,
               messageCount,
               messages: [

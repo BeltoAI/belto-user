@@ -18,6 +18,7 @@ const useChatStore = create((set, get) => ({
   isMessageSending: false,
   isNavigating: false,
   processingMessage: false,
+  sessionCache: {}, // Add session cache for performance
 
   // Add these new state properties
   tokenUsage: {
@@ -116,6 +117,20 @@ const useChatStore = create((set, get) => ({
     });
   },
 
+  // Clear session cache for performance
+  clearSessionCache: () => {
+    set({ sessionCache: {} });
+  },
+
+  // Clear specific session from cache
+  clearSessionFromCache: (sessionId) => {
+    set(state => {
+      const newCache = { ...state.sessionCache };
+      delete newCache[sessionId];
+      return { sessionCache: newCache };
+    });
+  },
+
   // Chat session management
   createNewSession: async (userId) => {
     try {
@@ -143,7 +158,7 @@ const useChatStore = create((set, get) => ({
     }
   },
 
-  // Fetch chat history
+  // Fetch chat history with performance optimizations
   fetchChatHistory: async () => {
     const userId = get().userId;
     const sessionId = get().currentSessionId;
@@ -154,6 +169,14 @@ const useChatStore = create((set, get) => ({
     }
 
     try {
+      // Check if we already have cached data for this session
+      const cachedMessages = get().sessionCache?.[sessionId];
+      if (cachedMessages && cachedMessages.length > 0) {
+        console.log('Using cached chat history for session:', sessionId);
+        set({ messages: cachedMessages });
+        return cachedMessages;
+      }
+
       const response = await fetch(`/api/chat?sessionId=${sessionId}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -166,8 +189,18 @@ const useChatStore = create((set, get) => ({
 
       const data = await response.json();
       const messages = data.messages || [];
+      
       console.log('Loaded chat history:', messages); // Debug log
-      set({ messages });
+      
+      // Cache the messages for this session
+      set(state => ({
+        messages,
+        sessionCache: {
+          ...state.sessionCache,
+          [sessionId]: messages
+        }
+      }));
+      
       return messages;
     } catch (error) {
       console.error('Error fetching chat history:', error);
