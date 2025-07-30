@@ -26,7 +26,12 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
     totalDislikes: 0,
     sentimentAnalysis: {}
   });
+  const [sentimentData, setSentimentData] = useState({
+    classes: [],
+    summary: { totalClasses: 0, totalLectures: 0, averageScore: 5.0 }
+  });
   const [loading, setLoading] = useState(false);
+  const [sentimentLoading, setSentimentLoading] = useState(false);
 
   useEffect(() => {
     // Fetch additional user profile data and stats
@@ -39,6 +44,22 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
         }
       } catch (error) {
         console.error('Error fetching user stats:', error);
+      }
+    };
+
+    // Fetch detailed sentiment analysis data
+    const fetchSentimentData = async () => {
+      try {
+        setSentimentLoading(true);
+        const response = await fetch(`/api/settings/sentiment-analysis`);
+        if (response.ok) {
+          const data = await response.json();
+          setSentimentData(data);
+        }
+      } catch (error) {
+        console.error('Error fetching sentiment data:', error);
+      } finally {
+        setSentimentLoading(false);
       }
     };
 
@@ -62,6 +83,7 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
     };
 
     fetchUserStats();
+    fetchSentimentData();
     fetchProfileData();
   }, []);
 
@@ -151,6 +173,154 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
             </div>
             <div className="text-xs text-gray-400">
               Score: {sentiment.score}/10
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderDetailedSentimentAnalysis = () => {
+    if (sentimentLoading) {
+      return (
+        <div className="flex items-center justify-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FFB800]"></div>
+          <span className="ml-3 text-gray-400">Loading sentiment analysis...</span>
+        </div>
+      );
+    }
+
+    if (!sentimentData.classes || sentimentData.classes.length === 0) {
+      return (
+        <div className="text-center py-8">
+          <div className="text-gray-400 text-sm mb-2">
+            No sentiment analysis data available yet
+          </div>
+          <div className="text-xs text-gray-500">
+            Start chatting in your classes to see sentiment analysis
+          </div>
+        </div>
+      );
+    }
+
+    const getSentimentColor = (category) => {
+      switch (category) {
+        case 'positive':
+          return 'bg-green-500/20 text-green-400 border-green-500/30';
+        case 'negative':
+          return 'bg-red-500/20 text-red-400 border-red-500/30';
+        default:
+          return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+      }
+    };
+
+    const getSentimentIcon = (category) => {
+      switch (category) {
+        case 'positive':
+          return '😊';
+        case 'negative':
+          return '😞';
+        default:
+          return '😐';
+      }
+    };
+
+    return (
+      <div className="space-y-6">
+        {/* Summary */}
+        <div className="bg-[#1f1f1f] p-4 rounded-lg border border-[#333333]">
+          <h4 className="text-white font-medium mb-3 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-[#FFB800]" />
+            Overall Summary
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-[#FFB800]">{sentimentData.summary.totalClasses}</div>
+              <div className="text-xs text-gray-400">Active Classes</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-[#FFB800]">{sentimentData.summary.totalLectures}</div>
+              <div className="text-xs text-gray-400">Total Lectures</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-[#FFB800]">{sentimentData.summary.averageScore}/10</div>
+              <div className="text-xs text-gray-400">Average Score</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Classes */}
+        {sentimentData.classes.map((classItem) => (
+          <div key={classItem.id} className="bg-[#1f1f1f] rounded-lg border border-[#333333] overflow-hidden">
+            {/* Class Header */}
+            <div className="p-4 border-b border-[#333333]">
+              <div className="flex items-center justify-between">
+                <h4 className="text-white font-medium text-lg">{classItem.name}</h4>
+                <div className="flex items-center gap-3">
+                  <span className={`text-xs px-3 py-1 rounded-full border ${getSentimentColor(classItem.overallSentiment.category)}`}>
+                    {getSentimentIcon(classItem.overallSentiment.category)} {classItem.overallSentiment.category}
+                  </span>
+                  <div className="text-right">
+                    <div className="text-sm font-semibold text-[#FFB800]">
+                      {classItem.overallSentiment.score}/10
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      {classItem.overallSentiment.totalMessages} messages
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Lectures */}
+            <div className="p-4">
+              {classItem.lectures.length === 0 ? (
+                <div className="text-center py-4 text-gray-400 text-sm">
+                  No lectures available for sentiment analysis
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <h5 className="text-gray-300 font-medium text-sm mb-3">
+                    Lectures ({classItem.lectures.length})
+                  </h5>
+                  <div className="grid gap-3">
+                    {classItem.lectures.map((lecture) => (
+                      <div key={lecture.id} className="bg-[#2a2a2a] p-3 rounded-lg border border-[#444444]">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <h6 className="text-white font-medium text-sm mb-1">{lecture.title}</h6>
+                            {lecture.description && (
+                              <p className="text-gray-400 text-xs mb-2 overflow-hidden" style={{
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical'
+                              }}>{lecture.description}</p>
+                            )}
+                            <div className="flex items-center gap-3 text-xs text-gray-500">
+                              <span>{lecture.messageCount} messages</span>
+                              <span>•</span>
+                              <span>{lecture.sessionCount} sessions</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 ml-4">
+                            <span className={`text-xs px-2 py-1 rounded-full border ${getSentimentColor(lecture.sentimentCategory)}`}>
+                              {getSentimentIcon(lecture.sentimentCategory)}
+                            </span>
+                            <div className="text-right">
+                              <div className="text-sm font-semibold text-[#FFB800]">
+                                {lecture.sentimentScore}/10
+                              </div>
+                              <div className="text-xs text-gray-400 capitalize">
+                                {lecture.sentimentCategory}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -437,13 +607,16 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
         </div>
       </div>
 
-      {/* Sentiment Analysis */}
-      <div className="bg-[#2a2a2a] p-6 rounded-lg border border-[#444444]">
-        <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-          <Heart className="w-5 h-5 text-[#FFB800]" />
-          Sentiment Analysis by Class
+      {/* Detailed Sentiment Analysis */}
+      <div className="bg-[#2a2a2a] p-6 rounded-lg mb-6 border border-[#444444]">
+        <h3 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
+          <Heart className="w-6 h-6 text-[#FFB800]" />
+          Sentiment Analysis
         </h3>
-        {renderSentimentAnalysis()}
+        <div className="text-gray-400 text-sm mb-4">
+          Analysis of your engagement and sentiment across different classes and lectures based on your chat interactions.
+        </div>
+        {renderDetailedSentimentAnalysis()}
       </div>
 
       {/* Cancel Button for Edit Mode */}
