@@ -40,25 +40,21 @@ export async function GET(request) {
     
     // Calculate total prompts (non-bot messages)
     let totalPrompts = 0;
-    let totalUsageHours = 0;
     
     for (const chat of userChats) {
       const userMessages = chat.messages.filter(msg => !msg.isBot);
       totalPrompts += userMessages.length;
-      
-      // Calculate usage hours (rough estimate based on message timestamps)
-      if (chat.messages.length > 1) {
-        const firstMessage = new Date(chat.messages[0].timestamp);
-        const lastMessage = new Date(chat.messages[chat.messages.length - 1].timestamp);
-        const sessionHours = (lastMessage - firstMessage) / (1000 * 60 * 60);
-        totalUsageHours += Math.max(sessionHours, 0.1); // Minimum 0.1 hours per session
-      }
     }
 
-    // Get message reactions (likes/dislikes)
-    const reactions = await MessageReaction.find({ userId: decoded.userId });
-    const totalLikes = reactions.filter(r => r.type === 'like').length;
-    const totalDislikes = reactions.filter(r => r.type === 'dislike').length;
+    // Get message reactions (likes/dislikes) - check both userId and studentId fields
+    const reactions = await MessageReaction.find({ 
+      $or: [
+        { userId: decoded.userId },
+        { studentId: decoded.userId }
+      ]
+    });
+    const totalLikes = reactions.filter(r => r.reactionType === 'like').length;
+    const totalDislikes = reactions.filter(r => r.reactionType === 'dislike').length;
 
     // Get sentiment analysis by class (placeholder for now)
     // In a real implementation, this would analyze the sentiment of user messages
@@ -83,7 +79,6 @@ export async function GET(request) {
       totalPrompts,
       totalLikes,
       totalDislikes,
-      totalUsageHours: Math.round(totalUsageHours * 10) / 10, // Round to 1 decimal
       sentimentAnalysis
     };
 

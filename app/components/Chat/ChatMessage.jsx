@@ -311,23 +311,10 @@ const ChatMessage = ({
           {/* Bot-specific actions */}
           {isBot && (
             <>
+              {/* Use the improved reaction buttons */}
+              {renderReactionButtons()}
+              
               <div className="flex gap-2 mb-3">
-                <button
-                  onClick={onLike}
-                  className="p-1 hover:bg-[#262626] rounded-md"
-                >
-                  <ThumbsUp
-                    className={`w-4 h-4 ${liked ? 'text-[#FFB800]' : 'text-gray-400'}`}
-                  />
-                </button>
-                <button
-                  onClick={onDislike}
-                  className="p-1 hover:bg-[#262626] rounded-md"
-                >
-                  <ThumbsDown
-                    className={`w-4 h-4 ${disliked ? 'text-[#FFB800]' : 'text-gray-400'}`}
-                  />
-                </button>
                 <button
                   onClick={onCopy}
                   className="p-1 hover:bg-[#262626] rounded-md"

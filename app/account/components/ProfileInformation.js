@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Edit, Camera, Mail, Phone, Calendar, Users, Trophy, TrendingUp, Heart, ThumbsUp, ThumbsDown, Clock, User } from 'lucide-react';
+import { Edit, Camera, Mail, Phone, Calendar, Users, Trophy, TrendingUp, Heart, ThumbsUp, ThumbsDown, User } from 'lucide-react';
 import { toast } from 'react-toastify';
 import Image from 'next/image';
 
@@ -24,7 +24,6 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
     totalPrompts: 0,
     totalLikes: 0,
     totalDislikes: 0,
-    totalUsageHours: 0,
     sentimentAnalysis: {}
   });
   const [loading, setLoading] = useState(false);
@@ -234,14 +233,6 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
                   <span className="text-xs text-gray-400">Dislikes</span>
                 </div>
                 <span className="text-lg font-semibold text-white">{userStats.totalDislikes}</span>
-              </div>
-              
-              <div className="bg-[#1f1f1f] p-3 rounded-lg border border-[#333333]">
-                <div className="flex items-center gap-2 mb-1">
-                  <Clock className="w-4 h-4 text-blue-400" />
-                  <span className="text-xs text-gray-400">Hours</span>
-                </div>
-                <span className="text-lg font-semibold text-white">{userStats.totalUsageHours}h</span>
               </div>
             </div>
           </div>
