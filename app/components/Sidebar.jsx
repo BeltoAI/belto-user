@@ -440,7 +440,23 @@ const Sidebar = () => {
                 }}
                 className="flex items-center w-full mb-3 px-2 py-2 hover:bg-[#262626] rounded-md transition-colors group" 
               >
-                <User className="w-5 h-5 text-[#FFD700] mr-2 group-hover:text-[#FFE44D]" />
+                {user.profileImage ? (
+                  <div className="w-8 h-8 rounded-full overflow-hidden mr-2 border-2 border-[#FFD700] group-hover:border-[#FFE44D]">
+                    <img 
+                      src={user.profileImage} 
+                      alt="Profile" 
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        // Fallback to User icon if image fails to load
+                        e.target.style.display = 'none';
+                        e.target.nextSibling.style.display = 'block';
+                      }}
+                    />
+                    <User className="w-full h-full text-[#FFD700] group-hover:text-[#FFE44D] hidden" />
+                  </div>
+                ) : (
+                  <User className="w-5 h-5 text-[#FFD700] mr-2 group-hover:text-[#FFE44D]" />
+                )}
                 <span className="text-white truncate text-sm group-hover:text-[#FFE44D]">{user.username}</span>
               </button>
             )}

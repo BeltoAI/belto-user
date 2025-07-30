@@ -28,11 +28,7 @@ export const useChatHandlers = (
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        const response = await fetch('/api/auth/user', {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
-        });
+        const response = await fetch('/api/auth/user');
         
         if (!response.ok) throw new Error('Failed to fetch user data');
         
@@ -133,8 +129,7 @@ export const useChatHandlers = (
       const userRes = await fetch('/api/chat', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           userId,

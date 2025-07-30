@@ -195,13 +195,39 @@ const ChatMessage = ({
       )}
 
       <div className="flex gap-3">
-        <Image 
-          src="/logo.png"
-          alt="Belto"
-          width={64}
-          height={64}
-          className="rounded-full object-cover w-8 h-8"
-        />
+        {isBot ? (
+          <Image 
+            src="/logo.png"
+            alt="Belto"
+            width={64}
+            height={64}
+            className="rounded-full object-cover w-8 h-8"
+          />
+        ) : (
+          <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
+            {avatar && avatar !== '/user.png' ? (
+              <Image 
+                src={avatar}
+                alt={name || "User"}
+                width={32}
+                height={32}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  // Fallback to default user image if profile image fails to load
+                  e.target.src = '/user.png';
+                }}
+              />
+            ) : (
+              <Image 
+                src="/user.png"
+                alt={name || "User"}
+                width={32}
+                height={32}
+                className="w-full h-full object-cover"
+              />
+            )}
+          </div>
+        )}
         <div className="flex-1">
           <div className="flex items-center gap-1 mb-1">
             <span className="text-sm font-medium">

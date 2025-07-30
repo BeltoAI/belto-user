@@ -154,18 +154,37 @@ const useChatStore = create((set, get) => ({
     }
 
     try {
-      const response = await fetch(`/api/chat?sessionId=${sessionId}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
+      const response = await fetch(`/api/chat?sessionId=${sessionId}`);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch chat history: ${response.status}`);
       }
 
       const data = await response.json();
-      const messages = data.messages || [];
+      let messages = data.messages || [];
+      
+      // Get user data to set correct avatar for messages without one
+      try {
+        const userResponse = await fetch('/api/auth/user');
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          
+          // Fix messages that don't have avatars
+          messages = messages.map(msg => {
+            if (!msg.isBot && !msg.avatar) {
+              return {
+                ...msg,
+                avatar: userData.profileImage || '/user.png',
+                name: msg.name || userData.username || 'User'
+              };
+            }
+            return msg;
+          });
+        }
+      } catch (userError) {
+        console.error('Error fetching user data for avatar fix:', userError);
+      }
+      
       console.log('Loaded chat history:', messages); // Debug log
       set({ messages });
       return messages;
@@ -181,9 +200,7 @@ const useChatStore = create((set, get) => ({
     
     if (!userId) {
       try {
-        const response = await fetch('/api/auth/user', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-        });
+        const response = await fetch('/api/auth/user');
         if (!response.ok) throw new Error('Failed to fetch user');
         const userData = await response.json();
         set({ userId: userData._id }); // Set the userId in the store
