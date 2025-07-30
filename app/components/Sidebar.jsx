@@ -91,6 +91,8 @@ const Sidebar = () => {
             throw new Error('Failed to fetch user');
         }
         const userData = await userResponse.json();
+        console.log('Sidebar - User data fetched:', userData);
+        console.log('Sidebar - Profile image:', userData.profileImage);
         setUser(userData); // Set user state
 
         // Fetch joined classes using the fetched user ID
@@ -447,9 +449,13 @@ const Sidebar = () => {
                       alt="Profile" 
                       className="w-full h-full object-cover"
                       onError={(e) => {
+                        console.log('Profile image failed to load:', user.profileImage);
                         // Fallback to User icon if image fails to load
                         e.target.style.display = 'none';
                         e.target.nextSibling.style.display = 'block';
+                      }}
+                      onLoad={() => {
+                        console.log('Profile image loaded successfully:', user.profileImage);
                       }}
                     />
                     <User className="w-full h-full text-[#FFD700] group-hover:text-[#FFE44D] hidden" />

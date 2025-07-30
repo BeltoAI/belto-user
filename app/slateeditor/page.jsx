@@ -2,7 +2,8 @@
 
 import React, { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
-import Sidebar from "@/app/components/EditorSidebar";
+import Sidebar from "@/app/components/Sidebar";
+import EditorSidebar from "@/app/components/EditorSidebar";
 import useEditorStore from "@/store/editorStore";
 import EditorToolbar from "@/app/components/Editor/EditorToolbar";
 import LoadingOverlay from "@/app/components/Editor/LoadingOverlay";
@@ -74,6 +75,7 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
   const [showCollaboration, setShowCollaboration] = useState(false);
   const [showCollaborationsList, setShowCollaborationsList] = useState(false);
   const [isEditorReady, setIsEditorReady] = useState(false);
+  const [showEditorSidebar, setShowEditorSidebar] = useState(false);
   const { editorContent, setEditorContent, addVersion } = useEditorStore();
   const [eventSource, setEventSource] = useState(null);
   const lastUpdateTime = useRef(Date.now());
@@ -747,6 +749,7 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
       {isEditorVisible && (
         <div className="flex flex-1 h-full">
           <Sidebar />
+          {showEditorSidebar && <EditorSidebar />}
           <div className="flex-1 overflow-y-auto mt-1 mx-2 relative">
             <style>
               {`
