@@ -7,6 +7,7 @@ import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import 'simplebar-react/dist/simplebar.min.css';
 import PropTypes from 'prop-types';
+import { Info } from 'lucide-react';
 import ChatMessage from '../components/Chat/ChatMessage';
 import ChatInput from '../components/Chat/ChatInput';
 import useChatStore from '@/store/chatStore';
@@ -31,6 +32,7 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel, 
   const [isSessionLoading, setIsSessionLoading] = useState(false);
   const [studentId, setStudentId] = useState(null);
   const [lectureId, setLectureId] = useState(null);
+  const [showInfoTooltip, setShowInfoTooltip] = useState(false);
 
   const {
     currentSessionId,
@@ -112,6 +114,18 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel, 
       scrollToBottom();
     }
   }, [isGenerating, messages.length, scrollToBottom]);
+
+  // Handle clicking outside to close info tooltip
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showInfoTooltip && !event.target.closest('.info-tooltip-container')) {
+        setShowInfoTooltip(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showInfoTooltip]);
 
   // Fetch session details to get lectureId
   useEffect(() => {
@@ -255,24 +269,36 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel, 
     }, toast);
   };
 
-  // Calculate session duration
+  // Calculate session duration - time spent actively chatting
   const calculateSessionTime = () => {
     if (!messages || messages.length === 0) return '0m';
     
-    const firstMessage = messages[0];
-    const lastMessage = messages[messages.length - 1];
+    // Only count user messages for active time calculation
+    const userMessages = messages.filter(msg => !msg.isBot);
+    if (userMessages.length === 0) return '0m';
     
-    const startTime = new Date(firstMessage.timestamp);
-    const endTime = new Date(lastMessage.timestamp);
+    const firstUserMessage = userMessages[0];
+    const lastUserMessage = userMessages[userMessages.length - 1];
+    
+    const startTime = new Date(firstUserMessage.timestamp);
+    const endTime = new Date(lastUserMessage.timestamp);
     const diffMs = endTime - startTime;
     
-    if (diffMs < 60000) return '<1m'; // Less than 1 minute
+    // If only one message or messages within 1 minute, show active time
+    if (userMessages.length === 1 || diffMs < 60000) {
+      return '<1m';
+    }
     
     const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 60) return `${diffMins}m`;
     
-    const diffHours = Math.floor(diffMins / 60);
-    const remainingMins = diffMins % 60;
+    // Cap the maximum time at 8 hours to avoid unrealistic times
+    const maxMins = 8 * 60; // 8 hours
+    const actualMins = Math.min(diffMins, maxMins);
+    
+    if (actualMins < 60) return `${actualMins}m`;
+    
+    const diffHours = Math.floor(actualMins / 60);
+    const remainingMins = actualMins % 60;
     return remainingMins > 0 ? `${diffHours}h ${remainingMins}m` : `${diffHours}h`;
   };
 
@@ -287,8 +313,75 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel, 
     const promptUsagePercent = Math.min(100, Math.round((totalPrompts / promptLimit) * 100));
     const sessionTime = calculateSessionTime();
     
+    // Create detailed info for tooltip
+    const getDetailedInfo = () => {
+      return (
+        <div className="bg-[#1A1A1A] border border-[#363636] rounded-lg p-4 shadow-xl text-sm text-white max-w-xs z-50 absolute top-full left-0 mt-2">
+          <h3 className="text-[#FFB800] font-semibold mb-3">Session Details</h3>
+          
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <span className="text-gray-400">AI Model:</span>
+              <span>{aiPreferences.model || 'Not set'}</span>
+            </div>
+            
+            <div className="flex justify-between">
+              <span className="text-gray-400">Temperature:</span>
+              <span>{aiPreferences.temperature} (Creativity level)</span>
+            </div>
+            
+            <div className="flex justify-between">
+              <span className="text-gray-400">Max Tokens:</span>
+              <span>{aiPreferences.maxTokens || 'Not set'}</span>
+            </div>
+            
+            <div className="flex justify-between">
+              <span className="text-gray-400">Tokens Used:</span>
+              <span className={tokenUsagePercent > 75 ? 'text-amber-400' : 'text-green-400'}>
+                {totalTokenUsage}/{tokenLimit} ({tokenUsagePercent}%)
+              </span>
+            </div>
+            
+            <div className="flex justify-between">
+              <span className="text-gray-400">Prompts Used:</span>
+              <span className={promptUsagePercent > 75 ? 'text-amber-400' : 'text-green-400'}>
+                {totalPrompts}/{promptLimit} ({promptUsagePercent}%)
+              </span>
+            </div>
+            
+            <div className="flex justify-between">
+              <span className="text-gray-400">Active Time:</span>
+              <span>{sessionTime}</span>
+            </div>
+            
+            <div className="flex justify-between">
+              <span className="text-gray-400">Streaming:</span>
+              <span>{aiPreferences.streaming ? 'Enabled' : 'Disabled'}</span>
+            </div>
+          </div>
+          
+          <div className="mt-3 pt-2 border-t border-[#363636] text-xs text-gray-500">
+            Click outside to close
+          </div>
+        </div>
+      );
+    };
+    
     return (
-      <div className="mb-2 mx-4 py-2 px-3 bg-[#262626] rounded-md flex flex-wrap items-center gap-2">
+      <div className="mb-2 mx-4 py-2 px-3 bg-[#262626] rounded-md flex flex-wrap items-center gap-2 relative">
+        {/* Info Icon */}
+        <div className="relative info-tooltip-container">
+          <button
+            onClick={() => setShowInfoTooltip(!showInfoTooltip)}
+            className="text-[#FFB800] hover:text-white transition-colors duration-200 p-1"
+            title="Session Information"
+          >
+            <Info size={16} />
+          </button>
+          
+          {showInfoTooltip && getDetailedInfo()}
+        </div>
+
         {aiPreferences.model && (
           <span className="text-xs bg-[#363636] px-2 py-1 rounded min-w-[100px] text-center">
             <span className="text-[#FFB800]">AI:</span> {aiPreferences.model}
@@ -323,7 +416,7 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel, 
           </div>
         </span>
 
-        {/* New Time field */}
+        {/* Time field */}
         <span className="text-xs bg-[#363636] px-2 py-1 rounded min-w-[100px] text-center">
           <span className="text-[#FFB800]">Time:</span> {sessionTime}
         </span>
