@@ -87,9 +87,9 @@ export const useAIResponse = () => {
       console.log("Message count:", messageCount, "Limit:", aiPreferences?.numPrompts || "unspecified");
       console.log("Token usage:", totalTokensUsed, "Limit:", aiPreferences?.tokenPredictionLimit || "unspecified");
 
-      // Reduced retry logic for faster responses
+      // Enhanced retry logic with fallback
       let lastError = null;
-      let maxRetries = 1; // Reduced from 2 to 1 for speed
+      let maxRetries = 2; // Restored to 2 for better reliability
       
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
@@ -105,6 +105,16 @@ export const useAIResponse = () => {
 
           if (response.ok) {
             const data = await response.json();
+            
+            // Check if this is a fallback response
+            if (data.fallback) {
+              console.log('Received fallback response from AI proxy');
+              return {
+                response: data.response,
+                tokenUsage: data.tokenUsage,
+                fallback: true
+              };
+            }
             
             // Check if the new response would exceed the token limit
             if (aiPreferences?.tokenPredictionLimit && 
@@ -169,8 +179,20 @@ export const useAIResponse = () => {
       const errorMessage = error.message || "Failed to generate AI response";
       setError(errorMessage);
       
+      // Provide more helpful fallback responses based on error type
+      let fallbackResponse;
+      if (errorMessage.includes('Could not connect to AI service')) {
+        fallbackResponse = "I'm currently experiencing connectivity issues. Please try again in a moment, or check if the AI service is available.";
+      } else if (errorMessage.includes('timeout')) {
+        fallbackResponse = "The AI service is taking longer than expected to respond. Please try again with a shorter message.";
+      } else if (errorMessage.includes('503')) {
+        fallbackResponse = "The AI service is temporarily unavailable. Please try again in a few minutes.";
+      } else {
+        fallbackResponse = `I apologize, but I'm having trouble generating a response right now. Error: ${errorMessage}. Please try again.`;
+      }
+      
       return {
-        response: `I apologize, but an error occurred: ${errorMessage}`,
+        response: fallbackResponse,
         tokenUsage: {
           total_tokens: 0,
           prompt_tokens: 0,

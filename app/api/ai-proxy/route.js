@@ -6,6 +6,9 @@ const endpoints = [
   'http://belto.myftp.biz:9999/v1/chat/completions'
 ];
 
+// Add a flag to enable fallback responses when all endpoints fail
+const ENABLE_FALLBACK_RESPONSES = true;
+
 // 'http://97.90.195.162:9999/v1/chat/completions',
 
 // Endpoint health tracking with circuit breaker pattern
@@ -20,7 +23,7 @@ const endpointStats = endpoints.map(url => ({
   lastCircuitBreakerCheck: Date.now()
 }));
 
-const TIMEOUT_MS = 8000; // Reduced to 8 seconds for faster responses
+const TIMEOUT_MS = 15000; // Increased to 15 seconds for better stability
 const MAX_CONSECUTIVE_FAILURES = 2; // Reduce failures before marking endpoint as unavailable
 const RETRY_INTERVAL_MS = 30000; // Try unavailable endpoints again after 30 seconds
 const HEALTH_CHECK_THRESHOLD = 180000; // 3 minutes in ms
@@ -304,15 +307,23 @@ export async function POST(request) {
     console.log('Request payload structure:', Object.keys(aiRequestPayload));
     console.log('Message count:', aiRequestPayload.messages.length);
     
-    // Reduced retry logic for faster responses
+    // Improved retry logic for better reliability
     let lastError = null;
-    let maxRetries = 1; // Reduced from 2 to 1 for speed
+    let maxRetries = 2; // Restored to 2 for better reliability
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         // Select the best endpoint using our load balancing algorithm
         const selectedEndpoint = selectEndpoint();
         console.log(`Attempt ${attempt}: Selected endpoint for request: ${selectedEndpoint}`);
+        
+        // Add detailed logging for debugging
+        console.log('Request details:', {
+          endpoint: selectedEndpoint,
+          timeout: TIMEOUT_MS,
+          payloadSize: JSON.stringify(aiRequestPayload).length,
+          messageCount: aiRequestPayload.messages.length
+        });
         
         // Start timing the request for performance tracking
         const requestStartTime = Date.now();
@@ -327,6 +338,11 @@ export async function POST(request) {
               'Authorization': `Bearer ${apiKey}`,
             },
             timeout: TIMEOUT_MS,
+            // Add additional debugging options
+            validateStatus: function (status) {
+              // Consider 2xx and some 4xx as valid for debugging
+              return status < 500;
+            }
           }
         );
 
@@ -391,8 +407,27 @@ export async function POST(request) {
       status: error.response?.status
     };
 
+    // Enhanced error handling with endpoint diagnostics
     if (error.code === 'ECONNREFUSED' || error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
-      errorMessage = 'Could not connect to AI service. The service might be down or unreachable.';
+      console.error('Connection error details:', {
+        code: error.code,
+        endpoint: error.config?.url,
+        timeout: TIMEOUT_MS,
+        availableEndpoints: endpointStats.filter(e => e.isAvailable).length,
+        totalEndpoints: endpointStats.length
+      });
+      
+      // If fallback is enabled and all endpoints failed, provide a helpful response
+      if (ENABLE_FALLBACK_RESPONSES) {
+        return NextResponse.json({
+          response: "I'm currently experiencing connectivity issues with my AI service. The endpoints may be temporarily unavailable. Please try again in a few moments, or contact support if this persists.",
+          tokenUsage: { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 },
+          fallback: true,
+          error: "Service temporarily unavailable"
+        });
+      }
+      
+      errorMessage = `Could not connect to AI service. The service might be down or unreachable. Tried ${endpointStats.length} endpoints.`;
       statusCode = 503; // Service Unavailable
     } else if (error.response?.status === 401) {
       errorMessage = 'Authentication failed with the AI service. Please check API key configuration.';
