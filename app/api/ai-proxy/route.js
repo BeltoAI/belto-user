@@ -20,7 +20,7 @@ const endpointStats = endpoints.map(url => ({
   lastCircuitBreakerCheck: Date.now()
 }));
 
-const TIMEOUT_MS = 25000; // 25 seconds timeout for Vercel compatibility
+const TIMEOUT_MS = 8000; // Reduced to 8 seconds for faster responses
 const MAX_CONSECUTIVE_FAILURES = 2; // Reduce failures before marking endpoint as unavailable
 const RETRY_INTERVAL_MS = 30000; // Try unavailable endpoints again after 30 seconds
 const HEALTH_CHECK_THRESHOLD = 180000; // 3 minutes in ms
@@ -293,20 +293,20 @@ export async function POST(request) {
 
     console.log('Final message count being sent to AI:', validMessages.length);
 
-    // Prepare the request payload based on the expected format
+    // Prepare the request payload optimized for speed
     const aiRequestPayload = {
       model: body.aiConfig?.model || body.preferences?.model || 'default-model',
       messages: validMessages,
       temperature: body.aiConfig?.temperature || body.preferences?.temperature || 0.7,
-      max_tokens: body.aiConfig?.maxTokens || body.preferences?.maxTokens || 500,
+      max_tokens: Math.min(body.aiConfig?.maxTokens || body.preferences?.maxTokens || 300, 300), // Cap at 300 for speed
     };
 
     console.log('Request payload structure:', Object.keys(aiRequestPayload));
     console.log('Message count:', aiRequestPayload.messages.length);
     
-    // Implement retry logic for better reliability
+    // Reduced retry logic for faster responses
     let lastError = null;
-    let maxRetries = 2;
+    let maxRetries = 1; // Reduced from 2 to 1 for speed
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {

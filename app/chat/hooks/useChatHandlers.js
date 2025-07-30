@@ -124,32 +124,12 @@ export const useChatHandlers = (
         timestamp: new Date().toISOString()
       };
 
-      handleMessageUpdate([...messages, userMessage]);
-
-      const userRes = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          userId,
-          sessionId: currentSessionId,
-          message: userMessage
-        })
-      });
-
-      if (!userRes.ok) throw new Error('Failed to save user message');
-
-      const savedUserMessage = await userRes.json();
-      setMessages(prev => prev.map(msg => 
-        msg.id === userMessage.id ? { ...msg, _id: savedUserMessage._id } : msg
-      ));
-
       // Check if the message is asking about a document in lecture materials
       const documentMentioned = findMentionedDocument(text, lectureMaterials);
       
-      // Format conversation history for the AI
-      const conversationHistory = messages.map(msg => ({
+      // Format conversation history for the AI (limit to last 6 messages for speed)
+      const recentMessages = messages.slice(-6);
+      const conversationHistory = recentMessages.map(msg => ({
         role: msg.isBot ? 'assistant' : 'user',
         content: msg.attachments && msg.attachments.length > 0 
           ? `${msg.message}\n\nAttached document content:\n${msg.attachments[0].content}`
@@ -176,7 +156,7 @@ export const useChatHandlers = (
         }];
       }
 
-      console.log('Generating AI response with:', {
+      console.log('Generating AI response optimized for speed:', {
         promptLength: promptToSend.length,
         attachmentsCount: attachmentsToSend.length,
         conversationHistoryLength: conversationHistory.length,
@@ -184,25 +164,58 @@ export const useChatHandlers = (
         hasAIPreferences: !!aiPreferences
       });
 
-      let aiResponse, messageTokenUsage;
-      try {
-        const result = await generateAIResponse(
+      handleMessageUpdate([...messages, userMessage]);
+
+      // Parallel execution: Save user message AND start AI generation simultaneously
+      const [savedUserMessage, aiResult] = await Promise.allSettled([
+        // Save user message to database
+        fetch('/api/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            userId,
+            sessionId: currentSessionId,
+            message: userMessage
+          })
+        }).then(async (userRes) => {
+          if (!userRes.ok) throw new Error('Failed to save user message');
+          return userRes.json();
+        }),
+        
+        // Generate AI response in parallel
+        generateAIResponse(
           promptToSend,
           attachmentsToSend,
           conversationHistory,
           aiPreferences,
-          totalPrompts  // Pass the current prompt count
-        );
-        aiResponse = result.response;
-        messageTokenUsage = result.tokenUsage;
-      } catch (aiError) {
-        console.error('AI response generation failed:', aiError);
+          totalPrompts
+        )
+      ]);
+
+      // Handle user message save result
+      if (savedUserMessage.status === 'fulfilled') {
+        setMessages(prev => prev.map(msg => 
+          msg.id === userMessage.id ? { ...msg, _id: savedUserMessage.value._id } : msg
+        ));
+      } else {
+        console.error('Failed to save user message:', savedUserMessage.reason);
+      }
+
+      // Handle AI response result
+      let aiResponse, messageTokenUsage;
+      if (aiResult.status === 'fulfilled') {
+        aiResponse = aiResult.value.response;
+        messageTokenUsage = aiResult.value.tokenUsage;
+      } else {
+        console.error('AI response generation failed:', aiResult.reason);
         
         // Create a more user-friendly error message
         let errorMsg = 'I apologize, but I encountered an error generating a response.';
-        if (aiError.message.includes('503')) {
+        if (aiResult.reason.message.includes('503')) {
           errorMsg += ' The AI service is temporarily unavailable. Please try again in a moment.';
-        } else if (aiError.message.includes('timeout')) {
+        } else if (aiResult.reason.message.includes('timeout')) {
           errorMsg += ' The request timed out. Please try again.';
         } else {
           errorMsg += ' Please try again.';

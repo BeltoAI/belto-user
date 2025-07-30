@@ -52,18 +52,20 @@ export const useAIResponse = () => {
         }
       }
 
+      // Limit conversation history to last 6 messages for faster processing
+      const recentMessages = Array.isArray(previousMessages) ? previousMessages.slice(-6) : [];
+      
       // Ensure history is properly formatted for the AI model
-      const formattedHistory = Array.isArray(previousMessages) ? 
-        previousMessages.map(msg => {
-          // If it's already in the right format, use it directly
-          if (msg.role && msg.content) return msg;
-          
-          // Otherwise, convert it to the correct format
-          return {
-            role: msg.isBot ? 'assistant' : 'user',
-            content: msg.message || msg.text || msg.content || ''
-          };
-        }) : [];
+      const formattedHistory = recentMessages.map(msg => {
+        // If it's already in the right format, use it directly
+        if (msg.role && msg.content) return msg;
+        
+        // Otherwise, convert it to the correct format
+        return {
+          role: msg.isBot ? 'assistant' : 'user',
+          content: msg.message || msg.text || msg.content || ''
+        };
+      });
 
       // Prepare the request body with AI preferences if available
       const requestBody = {
@@ -85,9 +87,9 @@ export const useAIResponse = () => {
       console.log("Message count:", messageCount, "Limit:", aiPreferences?.numPrompts || "unspecified");
       console.log("Token usage:", totalTokensUsed, "Limit:", aiPreferences?.tokenPredictionLimit || "unspecified");
 
-      // Implement client-side retry logic for better reliability
+      // Reduced retry logic for faster responses
       let lastError = null;
-      let maxRetries = 2;
+      let maxRetries = 1; // Reduced from 2 to 1 for speed
       
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
