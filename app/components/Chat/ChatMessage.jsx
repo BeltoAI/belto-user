@@ -12,7 +12,6 @@ import {
   ThumbsUp,
   ThumbsDown
 } from 'lucide-react';
-import { Loader2 } from 'lucide-react';
 import Image from 'next/image';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
