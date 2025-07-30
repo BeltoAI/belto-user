@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getTokenFromCookie, verifyAuth } from '@/midldleware/authMiddleware';
 import connectDB from '@/lib/db';
 import Student from '@/models/Student';
-import Chat from '@/models/Chat';
+import ChatSession from '@/models/Chat';
 import MessageReaction from '@/models/MessageReaction';
 import Class from '@/models/Class';
 
@@ -36,7 +36,7 @@ export async function GET(request) {
     }
 
     // Get user's chat sessions
-    const userChats = await Chat.find({ studentId: decoded.userId });
+    const userChats = await ChatSession.find({ userId: decoded.userId });
     
     // Calculate total prompts (non-bot messages)
     let totalPrompts = 0;
@@ -56,7 +56,7 @@ export async function GET(request) {
     }
 
     // Get message reactions (likes/dislikes)
-    const reactions = await MessageReaction.find({ studentId: decoded.userId });
+    const reactions = await MessageReaction.find({ userId: decoded.userId });
     const totalLikes = reactions.filter(r => r.type === 'like').length;
     const totalDislikes = reactions.filter(r => r.type === 'dislike').length;
 
