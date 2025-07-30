@@ -1,7 +1,17 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Paperclip, ThumbsUp, ThumbsDown, Copy, Trash2, X, Info, AlertTriangle } from 'lucide-react';
+import { 
+  AlertTriangle, 
+  Loader2, 
+  Copy, 
+  Trash2, 
+  Info, 
+  Paperclip, 
+  X,
+  ThumbsUp,
+  ThumbsDown
+} from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 import Image from 'next/image';
 import ReactMarkdown from 'react-markdown';
@@ -56,7 +66,8 @@ const ChatMessage = ({
   limitReached,
   limitType,
   tokenLimitWarning,
-  isStreaming
+  isStreaming,
+  index // Add index prop
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showTokenInfo, setShowTokenInfo] = useState(false);
@@ -64,84 +75,9 @@ const ChatMessage = ({
   const handleDelete = async () => {
     if (window.confirm('Are you sure you want to delete this message?')) {
       setIsDeleting(true);
-      await onDelete();
+      await onDelete(index); // Pass the index parameter
       setIsDeleting(false);
     }
-  };
-
-  // Add message reaction buttons with improved styling and transitions
-  const renderReactionButtons = () => {
-    if (!isBot) return null; // Only show reaction buttons for AI responses
-    
-    return (
-      <div className="flex space-x-2 mt-1">
-        <button
-          onClick={onLike}
-          disabled={reactionPending}
-          className={`text-xs px-2 py-1 rounded transition-all duration-200 transform active:scale-95 ${
-            liked 
-              ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/25' 
-              : 'bg-[#363636] hover:bg-[#464646] text-gray-300 hover:shadow-md'
-          } ${reactionPending ? 'opacity-70 cursor-not-allowed' : ''}`}
-          aria-label="Like this response"
-        >
-          <span className={`mr-1 transition-transform duration-200 ${liked ? 'scale-110' : ''} ${reactionPending ? 'animate-pulse' : ''}`}>
-            👍
-          </span>
-          {liked ? 'Liked' : 'Like'}
-          {reactionPending && <span className="ml-1 inline-block w-2 h-2 bg-current rounded-full animate-pulse"></span>}
-        </button>
-        
-        <button
-          onClick={onDislike}
-          disabled={reactionPending}
-          className={`text-xs px-2 py-1 rounded transition-all duration-200 transform active:scale-95 ${
-            disliked 
-              ? 'bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg shadow-red-500/25' 
-              : 'bg-[#363636] hover:bg-[#464646] text-gray-300 hover:shadow-md'
-          } ${reactionPending ? 'opacity-70 cursor-not-allowed' : ''}`}
-          aria-label="Dislike this response"
-        >
-          <span className={`mr-1 transition-transform duration-200 ${disliked ? 'scale-110' : ''} ${reactionPending ? 'animate-pulse' : ''}`}>
-            👎
-          </span>
-          {disliked ? 'Disliked' : 'Dislike'}
-          {reactionPending && <span className="ml-1 inline-block w-2 h-2 bg-current rounded-full animate-pulse"></span>}
-        </button>
-        
-        <button
-          onClick={onCopy}
-          className="bg-[#363636] hover:bg-[#464646] text-xs px-2 py-1 rounded text-gray-300 transition-all duration-200 hover:shadow-md active:scale-95"
-          aria-label="Copy message"
-        >
-          <span className="mr-1">📋</span>
-          Copy
-        </button>
-        
-        <button
-          onClick={handleDelete}
-          className={`bg-[#363636] hover:bg-[#464646] text-xs px-2 py-1 rounded text-gray-300 transition-all duration-200 hover:shadow-md active:scale-95 ${
-            isDeleting ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
-          disabled={isDeleting}
-          aria-label="Delete message"
-        >
-          <span className="mr-1">🗑️</span>
-          Delete
-        </button>
-        
-        {tokenUsage && (
-          <button
-            onClick={() => setShowTokenInfo(!showTokenInfo)}
-            className="bg-[#363636] hover:bg-[#464646] text-xs px-2 py-1 rounded text-gray-300 transition-all duration-200 hover:shadow-md active:scale-95"
-            aria-label="Show token usage information"
-          >
-            <span className="mr-1">ℹ️</span>
-            Info
-          </button>
-        )}
-      </div>
-    );
   };
 
   // Render limit warning banner
@@ -311,10 +247,21 @@ const ChatMessage = ({
           {/* Bot-specific actions */}
           {isBot && (
             <>
-              {/* Use the improved reaction buttons */}
-              {renderReactionButtons()}
-              
               <div className="flex gap-2 mb-3">
+                <button
+                  onClick={onLike}
+                  disabled={reactionPending}
+                  className={`p-1 hover:bg-[#262626] rounded-md ${liked ? 'text-blue-400' : 'text-gray-400'}`}
+                >
+                  <ThumbsUp className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={onDislike}
+                  disabled={reactionPending}
+                  className={`p-1 hover:bg-[#262626] rounded-md ${disliked ? 'text-red-400' : 'text-gray-400'}`}
+                >
+                  <ThumbsDown className="w-4 h-4" />
+                </button>
                 <button
                   onClick={onCopy}
                   className="p-1 hover:bg-[#262626] rounded-md"

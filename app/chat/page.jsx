@@ -327,10 +327,11 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel, 
                 <ChatMessage
                   key={`${message.id || index}-${index}`}
                   {...message}
+                  index={index}
                   onLike={() => handleToggleLike(message.id)}
                   onDislike={() => handleToggleDislike(message.id)}
                   onCopy={() => handleCopy(index)}
-                  onDelete={() => handleDelete(index)}
+                  onDelete={handleDelete}
                   liked={reactions[message.id] === 'like'}
                   disliked={reactions[message.id] === 'dislike'}
                   reactionPending={isReactionPending(message.id)}
