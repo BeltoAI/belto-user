@@ -71,7 +71,7 @@ const Sidebar = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Modified useEffect for fetching user and classes with performance optimizations
+  // Modified useEffect for fetching user and classes
   useEffect(() => {
     const fetchUserAndClasses = async () => {
       // Skip if sessions already initialized
@@ -79,12 +79,8 @@ const Sidebar = () => {
 
       try {
         setClassesLoading(true);
-        
-        // Use Promise.all for parallel requests where possible
-        const [userResponse] = await Promise.all([
-          fetch('/api/auth/user') // Remove token header, assuming cookie auth
-        ]);
-        
+        // Fetch user data first
+        const userResponse = await fetch('/api/auth/user'); // Removed token header, assuming cookie auth
         if (!userResponse.ok) {
             if (userResponse.status === 401) {
                 // Handle unauthorized access, maybe redirect to login
@@ -94,7 +90,6 @@ const Sidebar = () => {
             }
             throw new Error('Failed to fetch user');
         }
-        
         const userData = await userResponse.json();
         setUser(userData); // Set user state
 

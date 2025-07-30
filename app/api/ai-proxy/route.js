@@ -299,7 +299,6 @@ export async function POST(request) {
       messages: validMessages,
       temperature: body.aiConfig?.temperature || body.preferences?.temperature || 0.7,
       max_tokens: body.aiConfig?.maxTokens || body.preferences?.maxTokens || 500,
-      stream: body.preferences?.streaming || false, // Add streaming support based on admin preferences
     };
 
     console.log('Request payload structure:', Object.keys(aiRequestPayload));
@@ -318,9 +317,6 @@ export async function POST(request) {
         // Start timing the request for performance tracking
         const requestStartTime = Date.now();
 
-        // Check if streaming is enabled
-        const isStreaming = body.preferences?.streaming || false;
-        
         // Make the AI API call with API key in headers
         const response = await axios.post(
           selectedEndpoint,
@@ -331,7 +327,6 @@ export async function POST(request) {
               'Authorization': `Bearer ${apiKey}`,
             },
             timeout: TIMEOUT_MS,
-            responseType: isStreaming ? 'stream' : 'json',
           }
         );
 
@@ -341,89 +336,14 @@ export async function POST(request) {
 
         console.log(`AI response received with status: ${response.status}, time: ${responseTime}ms`);
 
-        // Handle streaming vs non-streaming responses
-        if (isStreaming) {
-          // Return a streaming response
-          const stream = new ReadableStream({
-            start(controller) {
-              const encoder = new TextEncoder();
-              
-              response.data.on('data', (chunk) => {
-                try {
-                  const lines = chunk.toString().split('\n');
-                  
-                  for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                      const data = line.slice(6);
-                      if (data === '[DONE]') {
-                        controller.close();
-                        return;
-                      }
-                      
-                      try {
-                        const parsed = JSON.parse(data);
-                        const content = parsed.choices?.[0]?.delta?.content;
-                        if (content) {
-                          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`));
-                        }
-                      } catch (parseError) {
-                        console.error('Error parsing streaming data:', parseError);
-                      }
-                    }
-                  }
-                } catch (error) {
-                  console.error('Error processing stream chunk:', error);
-                  controller.error(error);
-                }
-              });
-              
-              response.data.on('end', () => {
-                controller.close();
-              });
-              
-              response.data.on('error', (error) => {
-                console.error('Stream error:', error);
-                controller.error(error);
-              });
-            }
-          });
-          
-          return new Response(stream, {
-            headers: {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache',
-              'Connection': 'keep-alive',
-            },
-          });
-        } else {
-          // Handle non-streaming response (existing logic)
-          // Clean and format the AI response to ensure it starts properly
-          let aiResponse = response.data.choices?.[0]?.message?.content || 'No response content';
-          
-          // Trim whitespace and ensure response starts at beginning of sentence
-          aiResponse = aiResponse.trim();
-          
-          // If response doesn't start with uppercase letter or special character, find first proper sentence
-          if (aiResponse && !/^[A-Z"'"'(]/.test(aiResponse)) {
-            // Look for the first occurrence of a sentence starting pattern
-            const sentenceMatch = aiResponse.match(/[.!?]\s*([A-Z"'"'(][^.!?]*)/);
-            if (sentenceMatch && sentenceMatch[1]) {
-              aiResponse = sentenceMatch[1] + aiResponse.substring(aiResponse.indexOf(sentenceMatch[1]) + sentenceMatch[1].length);
-            } else {
-              // If no proper sentence found, capitalize the first letter
-              aiResponse = aiResponse.charAt(0).toUpperCase() + aiResponse.slice(1);
-            }
+        return NextResponse.json({
+          response: response.data.choices?.[0]?.message?.content || 'No response content',
+          tokenUsage: response.data.usage || {
+            total_tokens: 0,
+            prompt_tokens: 0,
+            completion_tokens: 0
           }
-
-          return NextResponse.json({
-            response: aiResponse,
-            tokenUsage: response.data.usage || {
-              total_tokens: 0,
-              prompt_tokens: 0,
-              completion_tokens: 0
-            }
-          });
-        }
+        });
       } catch (error) {
         lastError = error;
         
