@@ -6,7 +6,7 @@ const endpoints = [
   'http://47.34.185.47:9999/v1/chat/completions'
 ];
 
-// Add a flag to enable fallback responses when all endpoints fail - ENABLED for stability
+// Add a flag to enable fallback responses when all endpoints fail - ENABLED with better logging
 const ENABLE_FALLBACK_RESPONSES = true;
 
 // 'http://97.90.195.162:9999/v1/chat/completions',
@@ -329,6 +329,13 @@ export async function POST(request) {
   try {
     const body = await request.json();
     console.log('Request body structure:', Object.keys(body));
+    console.log('Request body details:', {
+      hasPrompt: !!body.prompt,
+      hasMessage: !!body.message,
+      hasMessages: !!body.messages,
+      hasAttachments: !!body.attachments,
+      attachmentCount: body.attachments?.length || 0
+    });
 
     // Get API key from environment variables
     const apiKey = process.env.AI_API_KEY;
@@ -507,7 +514,14 @@ export async function POST(request) {
    
     // Add enhanced default system message with document processing capabilities
     if (!systemMessageAdded) {
+      console.log('📝 Creating default system message');
       let systemContent;
+      
+      // Calculate content metrics for system message optimization
+      const hasAttachments = body.attachments && body.attachments.length > 0;
+      const totalContentLength = messages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
+      
+      console.log('System message metrics:', { hasAttachments, totalContentLength });
       
       // OPTIMIZED system messages for speed
       if (!hasAttachments && totalContentLength < 100) {
@@ -612,6 +626,25 @@ export async function POST(request) {
     console.log('Using timeout:', requestTimeout + 'ms');
     console.log('Token limit:', aiRequestPayload.max_tokens);
     
+    // Validate payload before sending to prevent silent failures
+    if (!aiRequestPayload.messages || aiRequestPayload.messages.length === 0) {
+      console.error('❌ Empty messages array in payload');
+      return NextResponse.json(
+        { error: "Invalid request: No messages to process" },
+        { status: 400 }
+      );
+    }
+    
+    if (!aiRequestPayload.model) {
+      console.error('❌ No model specified in payload');
+      return NextResponse.json(
+        { error: "Invalid request: No model specified" },
+        { status: 400 }
+      );
+    }
+    
+    console.log('✅ Payload validation passed, proceeding with AI request');
+    
     // ADAPTIVE retry logic: more retries for document/large requests
     let lastError = null;
     let maxRetries;
@@ -695,12 +728,31 @@ export async function POST(request) {
         updateEndpointStats(selectedEndpoint, true, responseTime);
 
         console.log(`AI response received with status: ${response.status}, time: ${responseTime}ms`);
+        
+        // Validate response structure before processing
+        if (response.status === 200) {
+          console.log('🔍 Response structure validation:', {
+            hasData: !!response.data,
+            hasChoices: !!response.data?.choices,
+            choicesLength: response.data?.choices?.length || 0,
+            hasMessage: !!response.data?.choices?.[0]?.message,
+            hasContent: !!response.data?.choices?.[0]?.message?.content
+          });
+        }
 
         // Handle successful response
         if (response.status === 200) {
-          console.log(`✅ AI response successful: ${response.data.choices?.[0]?.message?.content?.substring(0, 100)}...`);
+          const aiContent = response.data.choices?.[0]?.message?.content;
+          console.log(`✅ AI response successful: ${aiContent?.substring(0, 100)}...`);
+          
+          // Validate that we actually got content back
+          if (!aiContent || aiContent.trim().length === 0) {
+            console.error(`❌ Empty response content from ${selectedEndpoint}`);
+            throw new Error('Empty response content received from AI service');
+          }
+          
           return NextResponse.json({
-            response: response.data.choices?.[0]?.message?.content || 'No response content',
+            response: aiContent,
             tokenUsage: response.data.usage || {
               total_tokens: 0,
               prompt_tokens: 0,
@@ -794,6 +846,16 @@ export async function POST(request) {
       });
       // If fallback is enabled and all endpoints failed, provide a helpful response
       if (ENABLE_FALLBACK_RESPONSES) {
+        console.log('🔄 Triggering fallback response due to connection errors');
+        console.log('Fallback trigger details:', {
+          hasAttachments,
+          contentLength: body.attachments?.[0]?.content?.length || 0,
+          requestTimeout,
+          baseTimeout: BASE_TIMEOUT_MS,
+          attemptedEndpoints: Array.from(attemptedEndpoints),
+          endpointStats: endpointStats.map(e => ({ url: e.url, isAvailable: e.isAvailable, failCount: e.failCount }))
+        });
+        
         if (hasAttachments && body.attachments[0].content) {
           // For document requests, return a progress/fallback message
           return NextResponse.json({
@@ -819,12 +881,19 @@ export async function POST(request) {
       errorMessage = `Could not connect to AI service. The service might be down or unreachable. Tried ${endpointStats.length} endpoints.`;
       statusCode = 503; // Service Unavailable
     } else if (error.response?.status === 401) {
+      console.log('🔄 Triggering fallback response due to authentication error');
       errorMessage = 'Authentication failed with the AI service. Please check API key configuration.';
       statusCode = 500;
     } else if (error.response?.status === 400) {
+      console.log('🔄 Triggering fallback response due to bad request error');
+      console.log('Bad request details:', {
+        responseData: error.response?.data,
+        requestPayload: aiRequestPayload
+      });
       errorMessage = 'The AI service rejected the request. Check the request format.';
       statusCode = 400;
     } else if (error.response?.data?.error) {
+      console.log('🔄 Triggering fallback response due to AI service error');
       errorMessage = `AI service error: ${error.response.data.error.message || 'Unknown error'}`;
     }
     return NextResponse.json(
@@ -836,12 +905,27 @@ export async function POST(request) {
       { status: statusCode }
     );
   } catch (error) {
-    // Fallback error handler
-    console.error('Unexpected error in AI proxy:', error);
+    // Enhanced error handler to catch all types of errors
+    console.error('❌ Unexpected error in AI proxy:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      type: typeof error
+    });
+    
+    // Check if this is a ReferenceError (undefined variable)
+    if (error instanceof ReferenceError) {
+      console.error('🚨 ReferenceError detected - this indicates a code bug:', error.message);
+    }
+    
     return NextResponse.json(
       { 
         error: 'Unexpected server error', 
-        details: { message: error.message },
+        details: { 
+          message: error.message,
+          name: error.name,
+          type: error.constructor.name
+        },
         timestamp: new Date().toISOString()
       },
       { status: 500 }
