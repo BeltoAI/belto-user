@@ -52,8 +52,18 @@ export const useAIResponse = () => {
         }
       }
 
-      // Limit conversation history to last 6 messages for faster processing
-      const recentMessages = Array.isArray(previousMessages) ? previousMessages.slice(-6) : [];
+      // Optimize conversation history based on message complexity for SPEED
+      let recentMessages;
+      const isSimpleMessage = prompt.length < 50 && (!attachments || attachments.length === 0);
+      
+      if (isSimpleMessage) {
+        // For simple greetings/short messages, use minimal or no history for speed
+        recentMessages = previousMessages.length > 0 ? previousMessages.slice(-2) : [];
+        console.log("⚡ FAST TRACK: Using minimal history for simple message");
+      } else {
+        // For complex messages, use more history but still limit to last 6 messages
+        recentMessages = Array.isArray(previousMessages) ? previousMessages.slice(-6) : [];
+      }
       
       // Ensure history is properly formatted for the AI model
       const formattedHistory = recentMessages.map(msg => {
@@ -112,13 +122,22 @@ export const useAIResponse = () => {
         });
       }
 
-      // Enhanced retry logic with fallback for RAG system reliability
+      // Enhanced retry logic with optimized attempts based on message complexity
       let lastError = null;
-      let maxRetries = attachments && attachments.length > 0 ? 3 : 2; // More retries for PDF attachments
+      let maxRetries;
+      
+      // Determine retry strategy based on message complexity
+      if (isSimpleMessage) {
+        maxRetries = 1; // No retries for simple messages - fail fast for speed
+      } else if (attachments && attachments.length > 0) {
+        maxRetries = 3; // More retries for document processing
+      } else {
+        maxRetries = 2; // Standard retries for normal messages
+      }
       
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          const logPrefix = attachments && attachments.length > 0 ? '📄' : '🤖';
+          const logPrefix = attachments && attachments.length > 0 ? '📄' : (isSimpleMessage ? '⚡' : '🤖');
           console.log(`${logPrefix} AI request attempt ${attempt}/${maxRetries}...`);
           
           const response = await fetch('/api/ai-proxy', {
@@ -204,8 +223,17 @@ export const useAIResponse = () => {
           
           // If this is not the last attempt and it's a potentially recoverable error, retry
           if (attempt < maxRetries && (response.status === 503 || response.status >= 500)) {
-            const waitTime = attachments && attachments.length > 0 ? attempt * 1000 : attempt * 500; // Longer wait for PDFs
-            console.log(`⏱️ Waiting ${waitTime}ms before retry (PDF processing)...`);
+            // OPTIMIZED wait times based on message complexity
+            let waitTime;
+            if (isSimpleMessage) {
+              waitTime = 100; // Minimal wait for simple messages
+            } else if (attachments && attachments.length > 0) {
+              waitTime = attempt * 1000; // Longer wait for document processing
+            } else {
+              waitTime = attempt * 300; // Quick retry for normal messages
+            }
+            
+            console.log(`⏱️ Waiting ${waitTime}ms before retry...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
             continue;
           }
@@ -218,8 +246,17 @@ export const useAIResponse = () => {
           
           // If this is not the last attempt, wait before retrying
           if (attempt < maxRetries) {
-            const waitTime = attachments && attachments.length > 0 ? attempt * 1000 : attempt * 500; // Longer wait for PDFs
-            console.log(`⏱️ Waiting ${waitTime}ms before retry (attachment processing)...`);
+            // OPTIMIZED wait times based on message complexity
+            let waitTime;
+            if (isSimpleMessage) {
+              waitTime = 100; // Minimal wait for simple messages
+            } else if (attachments && attachments.length > 0) {
+              waitTime = attempt * 1000; // Longer wait for document processing
+            } else {
+              waitTime = attempt * 300; // Quick retry for normal messages
+            }
+            
+            console.log(`⏱️ Waiting ${waitTime}ms before retry...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
           }
         }

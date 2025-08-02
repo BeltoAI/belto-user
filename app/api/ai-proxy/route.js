@@ -23,7 +23,9 @@ const endpointStats = endpoints.map(url => ({
   lastCircuitBreakerCheck: Date.now()
 }));
 
-const BASE_TIMEOUT_MS = 8000; // Base timeout for simple requests
+// Optimized timeouts for faster responses
+const FAST_TIMEOUT_MS = 3000; // Ultra-fast timeout for simple messages
+const BASE_TIMEOUT_MS = 6000; // Base timeout for normal requests
 const ATTACHMENT_TIMEOUT_MS = 25000; // Extended timeout for requests with attachments or complex content
 const MAX_CONSECUTIVE_FAILURES = 1; // Reduce failures before marking endpoint as unavailable
 const RETRY_INTERVAL_MS = 20000; // Try unavailable endpoints again after 20 seconds
@@ -32,7 +34,7 @@ const CIRCUIT_BREAKER_THRESHOLD = 2; // Number of failures to open circuit break
 const CIRCUIT_BREAKER_TIMEOUT = 30000; // 30 second timeout for circuit breaker
 
 /**
- * Determines appropriate timeout based on request complexity and processing hints
+ * Determines appropriate timeout based on request complexity - OPTIMIZED FOR SPEED
  * @param {Object} body - Request body
  * @param {Array} messages - Formatted messages array
  * @returns {number} Timeout in milliseconds
@@ -43,7 +45,13 @@ function getTimeoutForRequest(body, messages) {
   const hasLargeContent = messages.some(msg => msg.content && msg.content.length > 1000);
   const totalContentLength = messages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
   
-  // Use processing hints for smarter timeout calculation
+  // FAST TRACK: Ultra-fast processing for simple messages
+  if (!hasAttachments && !hasLargeContent && totalContentLength < 200) {
+    console.log(`⚡ Using FAST timeout (${FAST_TIMEOUT_MS}ms) for simple message: ${totalContentLength} chars`);
+    return FAST_TIMEOUT_MS;
+  }
+  
+  // Use processing hints for smarter timeout calculation (only for complex requests)
   if (body.processingHints && hasAttachments) {
     const hints = body.processingHints;
     console.log(`🕐 Calculating timeout using processing hints:`, hints);
@@ -80,7 +88,7 @@ function getTimeoutForRequest(body, messages) {
     }
   }
   
-  // Check for code-related requests
+  // Check for code-related requests (only if no fast track)
   const hasCodeKeywords = messages.some(msg => 
     msg.content && /\b(code|function|class|variable|algorithm|program|java|python|javascript|html|css)\b/i.test(msg.content)
   );
@@ -112,7 +120,7 @@ function getTimeoutForRequest(body, messages) {
     return ATTACHMENT_TIMEOUT_MS;
   }
   
-  console.log(`Using base timeout (${BASE_TIMEOUT_MS}ms) for simple request`);
+  console.log(`Using base timeout (${BASE_TIMEOUT_MS}ms) for normal request`);
   return BASE_TIMEOUT_MS;
 }
 
@@ -470,18 +478,25 @@ export async function POST(request) {
    
     // Add enhanced default system message with document processing capabilities
     if (!systemMessageAdded) {
-      let systemContent = 'You are BELTO, a helpful AI assistant. Use previous conversation history to maintain context.';
+      let systemContent;
       
-      // Enhance system message for document processing
-      if (body.attachments && body.attachments.length > 0) {
+      // OPTIMIZED system messages for speed
+      if (!hasAttachments && totalContentLength < 200) {
+        // Ultra-short system message for simple requests
+        systemContent = 'You are BELTO, a helpful AI assistant. Be concise.';
+      } else if (body.attachments && body.attachments.length > 0) {
+        // Enhanced system message for document processing
         const documentTypes = body.attachments.map(att => att.name?.split('.').pop() || 'document').join(', ');
         const processingType = body.processingHints?.analysisType || 'analysis';
         
-        systemContent += ` You are currently processing ${documentTypes} file(s). Provide a ${processingType === 'summary' ? 'clear and comprehensive summary' : 'detailed analysis'} based on the document content provided. Focus on key insights, important details, and actionable information.`;
+        systemContent = `You are BELTO, a helpful AI assistant. Use previous conversation history to maintain context. You are currently processing ${documentTypes} file(s). Provide a ${processingType === 'summary' ? 'clear and comprehensive summary' : 'detailed analysis'} based on the document content provided. Focus on key insights, important details, and actionable information.`;
         
         if (body.processingHints?.documentType === 'pdf') {
           systemContent += ' When analyzing PDF content, pay special attention to document structure, headings, and key sections.';
         }
+      } else {
+        // Standard system message for normal requests
+        systemContent = 'You are BELTO, a helpful AI assistant. Use previous conversation history to maintain context.';
       }
       
       messages.unshift({
@@ -520,21 +535,49 @@ export async function POST(request) {
     // Determine appropriate timeout based on request complexity
     const requestTimeout = getTimeoutForRequest(body, optimizedMessages);
 
+    // Determine appropriate token limit based on request complexity - SPEED OPTIMIZED
+    let maxTokens = 300; // Default for complex requests
+    const totalContentLength = optimizedMessages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
+    const hasAttachments = body.attachments && body.attachments.length > 0;
+    
+    // FAST TRACK: Ultra-low token limits for simple messages
+    if (!hasAttachments && totalContentLength < 200) {
+      maxTokens = 50; // Very short responses for simple greetings
+      console.log(`⚡ Using FAST token limit (${maxTokens}) for simple message`);
+    } else if (!hasAttachments && totalContentLength < 500) {
+      maxTokens = 100; // Short responses for basic questions
+      console.log(`🚀 Using optimized token limit (${maxTokens}) for basic request`);
+    } else if (!hasAttachments && totalContentLength < 1000) {
+      maxTokens = 150; // Medium responses for normal conversations
+      console.log(`📝 Using standard token limit (${maxTokens}) for normal request`);
+    }
+
     // Prepare the request payload optimized for speed
     const aiRequestPayload = {
       model: body.aiConfig?.model || body.preferences?.model || 'default-model',
       messages: optimizedMessages,
       temperature: body.aiConfig?.temperature || body.preferences?.temperature || 0.7,
-      max_tokens: Math.min(body.aiConfig?.maxTokens || body.preferences?.maxTokens || 300, 300), // Cap at 300 for speed
+      max_tokens: Math.min(body.aiConfig?.maxTokens || body.preferences?.maxTokens || maxTokens, maxTokens),
     };
 
     console.log('Request payload structure:', Object.keys(aiRequestPayload));
     console.log('Message count:', aiRequestPayload.messages.length);
     console.log('Using timeout:', requestTimeout + 'ms');
+    console.log('Token limit:', aiRequestPayload.max_tokens);
     
-    // Improved retry logic for better reliability
+    // OPTIMIZED retry logic - fewer retries for simple messages
     let lastError = null;
-    let maxRetries = 3; // Increased to 3 for better reliability
+    
+    // Determine retry strategy based on request complexity
+    let maxRetries;
+    if (!hasAttachments && totalContentLength < 200) {
+      maxRetries = 1; // No retries for simple messages - fail fast
+    } else if (!hasAttachments && totalContentLength < 1000) {
+      maxRetries = 2; // One retry for normal messages
+    } else {
+      maxRetries = 3; // Full retries for complex/document requests
+    }
+    
     let attemptedEndpoints = new Set(); // Track which endpoints we've tried
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -619,7 +662,16 @@ export async function POST(request) {
 
         // If this is not the last attempt, wait before retrying
         if (attempt < maxRetries && attemptedEndpoints.size < endpoints.length) {
-          const waitTime = Math.min(attempt * 500, 1500); // Progressive delay: 500ms, 1000ms, 1500ms max
+          // OPTIMIZED wait times - shorter delays for faster responses
+          let waitTime;
+          if (totalContentLength < 200) {
+            waitTime = 100; // Minimal wait for simple messages
+          } else if (totalContentLength < 1000) {
+            waitTime = Math.min(attempt * 200, 500); // Quick retry for normal messages
+          } else {
+            waitTime = Math.min(attempt * 500, 1500); // Progressive delay for complex requests
+          }
+          
           console.log(`Waiting ${waitTime}ms before retry...`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
         }
