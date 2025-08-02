@@ -134,7 +134,22 @@ export const useAIResponse = () => {
             
             // Check if this is a fallback response
             if (data.fallback) {
-              console.log('✅ Received fallback response from AI proxy');
+              console.log('✅ Received enhanced fallback response from AI proxy');
+              
+              // If it's a partial analysis with processing hints, enhance it with additional context
+              if (data.partialAnalysis && data.processingHints) {
+                const hints = data.processingHints;
+                console.log('📄 Enhanced fallback with processing context:', hints);
+                
+                return {
+                  response: data.response,
+                  tokenUsage: data.tokenUsage,
+                  fallback: true,
+                  partialAnalysis: true,
+                  processingHints: hints,
+                  suggestions: data.suggestions || []
+                };
+              }
               
               // If it's a partial analysis, enhance it with additional suggestions
               if (data.partialAnalysis) {
@@ -225,36 +240,61 @@ export const useAIResponse = () => {
       if (attachments && attachments.length > 0 && attachments[0].content) {
         const content = attachments[0].content;
         const fileName = attachments[0].name || 'document';
+        const hints = requestBody.processingHints;
         
-        // Try to provide some value even when the main service fails
+        console.log('📄 Generating client-side fallback analysis with hints:', hints);
+        
+        // Enhanced client-side document analysis
+        let basicResponse = `📄 **Document Processing Issue - Basic Analysis**\n\n`;
+        basicResponse += `**File:** ${fileName}\n`;
+        
+        if (hints) {
+          basicResponse += `**Type:** ${hints.documentType.toUpperCase()}\n`;
+          basicResponse += `**Size:** ${Math.floor(hints.contentLength/1000)}KB\n`;
+          basicResponse += `**Requested:** ${hints.analysisType === 'summary' ? 'Summary' : 'Detailed Analysis'}\n\n`;
+        }
+        
+        // Basic content analysis
         const wordCount = content.split(/\s+/).length;
         const hasHeadings = /^#+\s|\n#+\s|heading|title|chapter|section/i.test(content);
         const firstSentences = content.substring(0, 300).split('.').slice(0, 2).join('.') + '.';
         
-        let basicResponse = `📄 I can see your document "${fileName}" (approximately ${wordCount} words). `;
+        basicResponse += `**Quick Overview:**\n`;
+        basicResponse += `• Document contains approximately ${wordCount} words\n`;
         
         if (hasHeadings) {
-          basicResponse += "It appears to be a structured document with sections. ";
+          basicResponse += `• Structured document with sections/headings\n`;
         }
         
         if (firstSentences.length > 10) {
-          basicResponse += `\n\nDocument opening: "${firstSentences}" `;
+          basicResponse += `\n**Opening Content:**\n"${firstSentences}"\n`;
         }
         
-        basicResponse += `\n\nWhile I'm having connectivity issues with the full AI processing service, here's what I can tell you about your document. For a more detailed analysis, please try:`;
-        basicResponse += `\n• Asking specific questions about particular sections`;
-        basicResponse += `\n• Requesting analysis of specific topics`;
-        basicResponse += `\n• Breaking down your request into smaller parts`;
-        basicResponse += `\n• Trying again in a few moments`;
+        basicResponse += `\n**⚠️ Processing Status:** The AI service is experiencing connectivity issues and cannot provide full ${hints?.analysisType || 'analysis'} right now.\n`;
+        
+        basicResponse += `\n**💡 Try These Options:**\n`;
+        
+        if (hints?.analysisType === 'summary') {
+          basicResponse += `• Ask for a summary of specific sections\n`;
+          basicResponse += `• Request key points from particular topics\n`;
+        } else {
+          basicResponse += `• Ask specific questions about the document content\n`;
+          basicResponse += `• Request analysis of particular sections\n`;
+        }
+        
+        basicResponse += `• Break your request into smaller parts\n`;
+        basicResponse += `• Try uploading a smaller document section\n`;
+        basicResponse += `• Retry in a few moments when service stabilizes\n`;
         
         return {
           response: basicResponse,
           tokenUsage: {
-            total_tokens: 50,
-            prompt_tokens: 25,
-            completion_tokens: 25
+            total_tokens: 60,
+            prompt_tokens: 30,
+            completion_tokens: 30
           },
           partialAnalysis: true,
+          processingHints: hints,
           error: false // Not really an error, just limited functionality
         };
       }

@@ -32,7 +32,7 @@ const CIRCUIT_BREAKER_THRESHOLD = 2; // Number of failures to open circuit break
 const CIRCUIT_BREAKER_TIMEOUT = 30000; // 30 second timeout for circuit breaker
 
 /**
- * Determines appropriate timeout based on request complexity
+ * Determines appropriate timeout based on request complexity and processing hints
  * @param {Object} body - Request body
  * @param {Array} messages - Formatted messages array
  * @returns {number} Timeout in milliseconds
@@ -43,16 +43,49 @@ function getTimeoutForRequest(body, messages) {
   const hasLargeContent = messages.some(msg => msg.content && msg.content.length > 1000);
   const totalContentLength = messages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
   
-  // Use extended timeout for:
-  // - Requests with attachments (PDFs, documents)
-  // - Messages with large content (>1000 chars in any message)
-  // - Total content length > 2000 characters
-  // - Complex programming requests (detect code keywords)
+  // Use processing hints for smarter timeout calculation
+  if (body.processingHints && hasAttachments) {
+    const hints = body.processingHints;
+    console.log(`🕐 Calculating timeout using processing hints:`, hints);
+    
+    // PDF documents typically need more processing time
+    if (hints.documentType === 'pdf') {
+      if (hints.contentLength > 20000) {
+        console.log(`Using maximum timeout (45000ms) for large PDF document: ${hints.contentLength} chars`);
+        return 45000; // 45 seconds for large PDFs
+      } else if (hints.contentLength > 10000) {
+        console.log(`Using extended timeout (35000ms) for medium PDF document: ${hints.contentLength} chars`);
+        return 35000; // 35 seconds for medium PDFs
+      } else {
+        console.log(`Using enhanced timeout (25000ms) for small PDF document: ${hints.contentLength} chars`);
+        return 25000; // 25 seconds for small PDFs
+      }
+    }
+    
+    // DOC files processing
+    if (hints.documentType === 'doc' || hints.documentType === 'docx') {
+      if (hints.contentLength > 15000) {
+        console.log(`Using enhanced timeout (35000ms) for large DOC document: ${hints.contentLength} chars`);
+        return 35000;
+      } else {
+        console.log(`Using enhanced timeout (25000ms) for DOC document: ${hints.contentLength} chars`);
+        return 25000;
+      }
+    }
+    
+    // Analysis vs Summary - Analysis needs more time
+    if (hints.analysisType === 'analysis' && hints.contentLength > 5000) {
+      console.log(`Using analysis timeout (30000ms) for detailed analysis: ${hints.contentLength} chars`);
+      return 30000;
+    }
+  }
+  
+  // Check for code-related requests
   const hasCodeKeywords = messages.some(msg => 
     msg.content && /\b(code|function|class|variable|algorithm|program|java|python|javascript|html|css)\b/i.test(msg.content)
   );
   
-  // Special handling for PDF attachments - use even longer timeout
+  // Fallback to original logic for non-hinted requests
   if (hasAttachments) {
     const hasPDFContent = body.attachments.some(att => 
       att.content && att.content.length > 5000 || 
@@ -350,45 +383,75 @@ export async function POST(request) {
       return msg;
     });
 
-    // Handle large PDF attachments by chunking content if needed
+    // Enhanced document processing with processing hints support
     if (body.attachments && body.attachments.length > 0) {
+      console.log('📄 Processing attachments with hints:', body.processingHints);
+      
       for (let attachment of body.attachments) {
-        if (attachment.content && attachment.content.length > 15000) {
-          console.log(`Large attachment detected (${attachment.content.length} chars), applying smart chunking...`);
+        if (attachment.content) {
+          let processedContent = attachment.content;
+          const contentLength = attachment.content.length;
           
-          // For very large documents, create a more intelligent summary
-          const content = attachment.content;
-          const contentLength = content.length;
-          
-          if (contentLength > 50000) {
-            // For extremely large documents, take key sections
-            const beginning = content.substring(0, 8000);
-            const middle = content.substring(Math.floor(contentLength * 0.4), Math.floor(contentLength * 0.4) + 4000);
-            const ending = content.substring(contentLength - 8000);
-            attachment.content = `${beginning}\n\n[... Document summary: This is a ${Math.floor(contentLength/1000)}KB document. Key sections included for analysis ...]\n\n${middle}\n\n[... continuing to end section ...]\n\n${ending}`;
+          // Use processing hints to optimize content handling
+          if (body.processingHints) {
+            const hints = body.processingHints;
+            console.log(`📋 Using processing hints: Type=${hints.documentType}, Length=${hints.contentLength}, Analysis=${hints.analysisType}`);
+            
+            // Adjust processing based on document type and analysis type
+            if (hints.documentType === 'pdf' && hints.analysisType === 'summary') {
+              // For PDF summaries, focus on key sections
+              if (contentLength > 15000) {
+                const beginning = attachment.content.substring(0, 8000);
+                const ending = attachment.content.substring(contentLength - 6000);
+                processedContent = `${beginning}\n\n[--- DOCUMENT SUMMARY OPTIMIZED FOR PDF ---]\n[Original document: ${Math.floor(contentLength/1000)}KB PDF file]\n[Processing mode: Summary generation]\n\n${ending}`;
+                console.log(`PDF summary optimization: ${contentLength} → ${processedContent.length} characters`);
+              }
+            } else if (hints.analysisType === 'analysis') {
+              // For detailed analysis, preserve more content structure
+              if (contentLength > 20000) {
+                const beginning = attachment.content.substring(0, 12000);
+                const middle = attachment.content.substring(Math.floor(contentLength * 0.4), Math.floor(contentLength * 0.4) + 6000);
+                const ending = attachment.content.substring(contentLength - 8000);
+                processedContent = `${beginning}\n\n[--- DOCUMENT ANALYSIS MODE ---]\n[Full analysis requested for ${hints.documentType.toUpperCase()} document]\n[Key sections preserved for detailed analysis]\n\n${middle}\n\n[--- CONTINUING TO CONCLUSION ---]\n\n${ending}`;
+                console.log(`Document analysis optimization: ${contentLength} → ${processedContent.length} characters`);
+              }
+            }
           } else {
-            // For large documents, take larger chunks
-            const firstPart = content.substring(0, 12000);
-            const lastPart = content.substring(content.length - 8000);
-            attachment.content = `${firstPart}\n\n[... content continues - document processing optimized for analysis ...]\n\n${lastPart}`;
+            // Fallback to original logic if no processing hints
+            if (contentLength > 15000) {
+              console.log(`Large attachment detected (${contentLength} chars), applying smart chunking...`);
+              
+              if (contentLength > 50000) {
+                const beginning = attachment.content.substring(0, 8000);
+                const middle = attachment.content.substring(Math.floor(contentLength * 0.4), Math.floor(contentLength * 0.4) + 4000);
+                const ending = attachment.content.substring(contentLength - 8000);
+                processedContent = `${beginning}\n\n[... Document summary: This is a ${Math.floor(contentLength/1000)}KB document. Key sections included for analysis ...]\n\n${middle}\n\n[... continuing to end section ...]\n\n${ending}`;
+              } else {
+                const firstPart = attachment.content.substring(0, 12000);
+                const lastPart = attachment.content.substring(contentLength - 8000);
+                processedContent = `${firstPart}\n\n[... content continues - document processing optimized for analysis ...]\n\n${lastPart}`;
+              }
+              
+              console.log(`Attachment content optimized: ${contentLength} → ${processedContent.length} characters`);
+            }
           }
           
-          console.log(`Attachment content optimized: ${contentLength} → ${attachment.content.length} characters`);
-        }
-        
-        // For all attachments with content, add it as a separate system message for better processing
-        if (attachment.content) {
+          // Create enhanced document message with processing context
+          const documentContext = body.processingHints ? 
+            `Document Analysis Request (${body.processingHints.documentType.toUpperCase()}): ${body.processingHints.analysisType === 'summary' ? 'Please provide a comprehensive summary' : 'Please provide detailed analysis'}` :
+            `Document Content for Analysis`;
+            
           const contentMessage = {
             role: 'system',
-            content: `Document Content for Analysis (${attachment.name || 'Document'}):\n\n${attachment.content}`
+            content: `${documentContext} (${attachment.name || 'Document'}):\n\n${processedContent}`
           };
           messages.push(contentMessage);
-          console.log(`Added document content as separate message: ${attachment.content.length} characters`);
+          console.log(`✅ Added enhanced document content: ${processedContent.length} characters with processing context`);
         }
       }
     }
 
-    // Add system message if preferences contains it
+    // Add system message with document processing awareness
     let systemMessageAdded = false;
    
     if (body.preferences?.systemPrompts && body.preferences.systemPrompts.length > 0) {
@@ -405,11 +468,25 @@ export async function POST(request) {
       systemMessageAdded = true;
     }
    
-    // Add default system message if none provided
+    // Add enhanced default system message with document processing capabilities
     if (!systemMessageAdded) {
+      let systemContent = 'You are BELTO, a helpful AI assistant. Use previous conversation history to maintain context.';
+      
+      // Enhance system message for document processing
+      if (body.attachments && body.attachments.length > 0) {
+        const documentTypes = body.attachments.map(att => att.name?.split('.').pop() || 'document').join(', ');
+        const processingType = body.processingHints?.analysisType || 'analysis';
+        
+        systemContent += ` You are currently processing ${documentTypes} file(s). Provide a ${processingType === 'summary' ? 'clear and comprehensive summary' : 'detailed analysis'} based on the document content provided. Focus on key insights, important details, and actionable information.`;
+        
+        if (body.processingHints?.documentType === 'pdf') {
+          systemContent += ' When analyzing PDF content, pay special attention to document structure, headings, and key sections.';
+        }
+      }
+      
       messages.unshift({
         role: 'system',
-        content: 'You are a helpful AI assistant named BELTO. Use previous conversation history to maintain context.'
+        content: systemContent
       });
     }
 
@@ -587,53 +664,101 @@ export async function POST(request) {
         const hasAttachments = body.attachments && body.attachments.length > 0;
         const isComplexRequest = requestTimeout > BASE_TIMEOUT_MS;
         
-        // For document attachments, try to provide a basic analysis instead of complete failure
+        // For document attachments, try to provide enhanced basic analysis instead of complete failure
         if (hasAttachments && body.attachments[0].content) {
           const content = body.attachments[0].content;
           const fileName = body.attachments[0].name || 'document';
+          const hints = body.processingHints;
           
-          // Generate a basic response about the document structure
-          let basicAnalysis = `I can see you've uploaded a document (${fileName}). `;
+          console.log('📄 Generating enhanced fallback analysis for document:', fileName);
           
-          // Analyze document structure
+          // Enhanced document analysis using processing hints
+          let basicAnalysis = `📄 **Document Analysis for ${fileName}**\n\n`;
+          
+          // Use processing hints for better analysis
+          if (hints) {
+            basicAnalysis += `*Document Type:* ${hints.documentType.toUpperCase()}\n`;
+            basicAnalysis += `*Analysis Type:* ${hints.analysisType === 'summary' ? 'Summary' : 'Detailed Analysis'}\n`;
+            basicAnalysis += `*Content Size:* ${Math.floor(hints.contentLength/1000)}KB\n\n`;
+          }
+          
+          // Analyze document structure and content
           const wordCount = content.split(/\s+/).length;
+          const paragraphCount = content.split(/\n\s*\n/).length;
           const hasHeadings = /^#+\s|\n#+\s|heading|title|chapter|section/i.test(content);
           const hasNumbers = /\b\d+(\.\d+)?\b/.test(content);
           const hasCode = /```|function|class|var|let|const|public|private/.test(content);
+          const hasBullets = /^\s*[\*\-\•]/m.test(content);
+          const hasLinks = /https?:\/\/|www\./i.test(content);
           
-          if (wordCount > 0) {
-            basicAnalysis += `The document contains approximately ${wordCount} words. `;
+          // Document statistics
+          basicAnalysis += `**Document Overview:**\n`;
+          basicAnalysis += `• ${wordCount} words across ${paragraphCount} sections\n`;
+          
+          if (hasHeadings) basicAnalysis += `• Structured with headings and sections\n`;
+          if (hasCode) basicAnalysis += `• Contains code or technical content\n`;
+          if (hasNumbers) basicAnalysis += `• Includes numerical data and statistics\n`;
+          if (hasBullets) basicAnalysis += `• Uses bullet points and lists\n`;
+          if (hasLinks) basicAnalysis += `• Contains web links or references\n`;
+          
+          // Extract key content sections
+          const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 20);
+          const firstSentence = sentences[0]?.trim();
+          const lastSentence = sentences[sentences.length - 1]?.trim();
+          
+          if (firstSentence) {
+            basicAnalysis += `\n**Opening Content:**\n"${firstSentence}..."\n`;
           }
           
-          if (hasHeadings) {
-            basicAnalysis += `It appears to be structured with headings or sections. `;
+          // Try to identify key topics/themes
+          const commonWords = content.toLowerCase()
+            .split(/\W+/)
+            .filter(word => word.length > 4)
+            .reduce((acc, word) => {
+              acc[word] = (acc[word] || 0) + 1;
+              return acc;
+            }, {});
+            
+          const topWords = Object.entries(commonWords)
+            .sort(([,a], [,b]) => b - a)
+            .slice(0, 5)
+            .map(([word]) => word);
+            
+          if (topWords.length > 0) {
+            basicAnalysis += `\n**Key Themes:** ${topWords.join(', ')}\n`;
           }
           
-          if (hasCode) {
-            basicAnalysis += `I notice it contains code or technical content. `;
+          if (lastSentence && lastSentence !== firstSentence) {
+            basicAnalysis += `\n**Conclusion Area:**\n"${lastSentence}..."\n`;
           }
           
-          if (hasNumbers) {
-            basicAnalysis += `The document includes numerical data. `;
+          // Provide specific suggestions based on processing hints
+          basicAnalysis += `\n**🔧 Service Status:** Experiencing connectivity issues with full AI processing\n`;
+          basicAnalysis += `\n**💡 Recommendations:**\n`;
+          
+          if (hints?.analysisType === 'summary') {
+            basicAnalysis += `• Ask for analysis of specific sections\n`;
+            basicAnalysis += `• Request summary of particular topics\n`;
+            basicAnalysis += `• Break down into smaller questions\n`;
+          } else {
+            basicAnalysis += `• Focus on specific aspects of the document\n`;
+            basicAnalysis += `• Ask about particular data points\n`;
+            basicAnalysis += `• Request analysis of specific sections\n`;
           }
           
-          // Extract key phrases from the beginning
-          const firstParagraph = content.substring(0, 500).split('\n')[0];
-          if (firstParagraph && firstParagraph.length > 20) {
-            basicAnalysis += `\n\nFrom the opening content: "${firstParagraph.substring(0, 200)}..." `;
-          }
-          
-          basicAnalysis += `\n\nWhile I'm experiencing some connectivity issues with the full AI processing service, I can provide this basic analysis. For more detailed insights, please try asking specific questions about particular sections of the document, or try again in a few moments when the service stabilizes.`;
+          basicAnalysis += `• Try again in a few moments for full AI processing\n`;
           
           return NextResponse.json({
             response: basicAnalysis,
-            tokenUsage: { total_tokens: 50, prompt_tokens: 25, completion_tokens: 25 },
+            tokenUsage: { total_tokens: 75, prompt_tokens: 35, completion_tokens: 40 },
             fallback: true,
             partialAnalysis: true,
+            processingHints: hints,
             suggestions: [
-              "Ask about specific sections of the document",
-              "Request analysis of particular topics mentioned",
-              "Try breaking down your question into smaller parts"
+              `Analyze specific sections of ${fileName}`,
+              `Request details about particular topics`,
+              `Ask questions about the document structure`,
+              `Try again for full AI processing`
             ]
           });
         }
