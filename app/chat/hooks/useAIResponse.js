@@ -86,14 +86,24 @@ export const useAIResponse = () => {
       console.log("Sending AI request with history length:", formattedHistory.length);
       console.log("Message count:", messageCount, "Limit:", aiPreferences?.numPrompts || "unspecified");
       console.log("Token usage:", totalTokensUsed, "Limit:", aiPreferences?.tokenPredictionLimit || "unspecified");
+      
+      // Log attachment info for debugging
+      if (attachments && attachments.length > 0) {
+        console.log("📄 Processing attachment:", {
+          name: attachments[0].name,
+          contentLength: attachments[0].content?.length || 0,
+          type: attachments[0].name?.split('.').pop() || 'unknown'
+        });
+      }
 
       // Enhanced retry logic with fallback for RAG system reliability
       let lastError = null;
-      let maxRetries = 2; // Optimized for speed and reliability
+      let maxRetries = attachments && attachments.length > 0 ? 3 : 2; // More retries for PDF attachments
       
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          console.log(`🤖 AI request attempt ${attempt}/${maxRetries}...`);
+          const logPrefix = attachments && attachments.length > 0 ? '📄' : '🤖';
+          console.log(`${logPrefix} AI request attempt ${attempt}/${maxRetries}...`);
           
           const response = await fetch('/api/ai-proxy', {
             method: 'POST',
@@ -151,8 +161,8 @@ export const useAIResponse = () => {
           
           // If this is not the last attempt and it's a potentially recoverable error, retry
           if (attempt < maxRetries && (response.status === 503 || response.status >= 500)) {
-            const waitTime = attempt * 500; // Progressive delay: 500ms, 1000ms
-            console.log(`⏱️ Waiting ${waitTime}ms before retry...`);
+            const waitTime = attachments && attachments.length > 0 ? attempt * 1000 : attempt * 500; // Longer wait for PDFs
+            console.log(`⏱️ Waiting ${waitTime}ms before retry (PDF processing)...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
             continue;
           }
@@ -165,8 +175,8 @@ export const useAIResponse = () => {
           
           // If this is not the last attempt, wait before retrying
           if (attempt < maxRetries) {
-            const waitTime = attempt * 500; // Progressive delay: 500ms, 1000ms
-            console.log(`⏱️ Waiting ${waitTime}ms before retry...`);
+            const waitTime = attachments && attachments.length > 0 ? attempt * 1000 : attempt * 500; // Longer wait for PDFs
+            console.log(`⏱️ Waiting ${waitTime}ms before retry (attachment processing)...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
           }
         }
@@ -185,13 +195,23 @@ export const useAIResponse = () => {
       if (errorMessage.includes('Could not connect to AI service') || errorMessage.includes('503')) {
         // Check if this was a request with attachments
         if (attachments && attachments.length > 0) {
-          fallbackResponse = "📄 I'm having trouble processing your document right now. The AI service is experiencing connectivity issues. Please try uploading a smaller file or try again in a moment.";
+          const fileSize = attachments[0].content?.length || 0;
+          if (fileSize > 10000) {
+            fallbackResponse = "📄 Your document is quite large and I'm having trouble processing it right now. The AI service is experiencing connectivity issues. Please try breaking your question into smaller parts or try again in a moment.";
+          } else {
+            fallbackResponse = "📄 I'm having trouble processing your document right now. The AI service is experiencing connectivity issues. Please try uploading a smaller file or try again in a moment.";
+          }
         } else {
           fallbackResponse = "🔧 I'm experiencing connectivity issues with the AI service. The system is working to restore connection. Please try again in a moment.";
         }
       } else if (errorMessage.includes('timeout') || errorMessage.includes('ECONNABORTED')) {
         if (attachments && attachments.length > 0) {
-          fallbackResponse = "⏱️ Your document is taking longer than expected to process. Please try with a smaller file or wait a moment before trying again.";
+          const fileSize = attachments[0].content?.length || 0;
+          if (fileSize > 15000) {
+            fallbackResponse = "⏱️ Your document is very large and taking longer than expected to process. Please try asking specific questions about the document instead of requesting a full summary, or upload a smaller document.";
+          } else {
+            fallbackResponse = "⏱️ Your document is taking longer than expected to process. Please try with a smaller file or wait a moment before trying again.";
+          }
         } else {
           fallbackResponse = "⏱️ The AI service is taking longer than expected. Please try again with a shorter message or wait a moment.";
         }

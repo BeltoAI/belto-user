@@ -52,6 +52,23 @@ function getTimeoutForRequest(body, messages) {
     msg.content && /\b(code|function|class|variable|algorithm|program|java|python|javascript|html|css)\b/i.test(msg.content)
   );
   
+  // Special handling for PDF attachments - use even longer timeout
+  if (hasAttachments) {
+    const hasPDFContent = body.attachments.some(att => 
+      att.content && att.content.length > 5000 || 
+      att.name && att.name.toLowerCase().includes('.pdf')
+    );
+    
+    if (hasPDFContent || totalContentLength > 10000) {
+      console.log(`Using maximum timeout (45000ms) for large PDF/document request:`, {
+        hasAttachments,
+        totalContentLength,
+        attachmentSizes: body.attachments.map(att => att.content?.length || 0)
+      });
+      return 45000; // 45 seconds for large PDFs
+    }
+  }
+  
   if (hasAttachments || hasLargeContent || totalContentLength > 2000 || hasCodeKeywords) {
     console.log(`Using extended timeout (${ATTACHMENT_TIMEOUT_MS}ms) for complex request:`, {
       hasAttachments,
@@ -319,6 +336,20 @@ export async function POST(request) {
       return msg;
     });
 
+    // Handle large PDF attachments by chunking content if needed
+    if (body.attachments && body.attachments.length > 0) {
+      for (let attachment of body.attachments) {
+        if (attachment.content && attachment.content.length > 15000) {
+          console.log(`Large attachment detected (${attachment.content.length} chars), chunking content...`);
+          // Take first 10000 characters and last 5000 characters for context
+          const firstPart = attachment.content.substring(0, 10000);
+          const lastPart = attachment.content.substring(attachment.content.length - 5000);
+          attachment.content = `${firstPart}\n\n[... content truncated for processing efficiency ...]\n\n${lastPart}`;
+          console.log(`Attachment content reduced to ${attachment.content.length} characters`);
+        }
+      }
+    }
+
     // Add system message if preferences contains it
     let systemMessageAdded = false;
    
@@ -346,23 +377,38 @@ export async function POST(request) {
 
     // Ensure each message has content and remove any empty messages
     const validMessages = messages.filter(msg => msg.content);
+    
+    // Optimize message content for large documents
+    const optimizedMessages = validMessages.map(msg => {
+      if (msg.content && msg.content.length > 20000) {
+        console.log(`Large message content detected (${msg.content.length} chars), optimizing...`);
+        // For very large content, take beginning and end for context
+        const beginning = msg.content.substring(0, 12000);
+        const ending = msg.content.substring(msg.content.length - 8000);
+        return {
+          ...msg,
+          content: `${beginning}\n\n[... document content summarized for efficient processing ...]\n\n${ending}`
+        };
+      }
+      return msg;
+    });
    
-    if (validMessages.length === 0) {
+    if (optimizedMessages.length === 0) {
       return NextResponse.json(
         { error: "No valid messages with content provided" },
         { status: 400 }
       );
     }
 
-    console.log('Final message count being sent to AI:', validMessages.length);
+    console.log('Final message count being sent to AI:', optimizedMessages.length);
 
     // Determine appropriate timeout based on request complexity
-    const requestTimeout = getTimeoutForRequest(body, validMessages);
+    const requestTimeout = getTimeoutForRequest(body, optimizedMessages);
 
     // Prepare the request payload optimized for speed
     const aiRequestPayload = {
       model: body.aiConfig?.model || body.preferences?.model || 'default-model',
-      messages: validMessages,
+      messages: optimizedMessages,
       temperature: body.aiConfig?.temperature || body.preferences?.temperature || 0.7,
       max_tokens: Math.min(body.aiConfig?.maxTokens || body.preferences?.maxTokens || 300, 300), // Cap at 300 for speed
     };
