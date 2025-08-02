@@ -588,13 +588,13 @@ export async function POST(request) {
       // ADAPTIVE: For document/large requests, scale token limit with size
       const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
       if (docSize > 100000) {
-        maxTokens = 600;
+        maxTokens = 1200;
       } else if (docSize > 50000) {
-        maxTokens = 400;
+        maxTokens = 800;
       } else if (docSize > 20000) {
-        maxTokens = 300;
+        maxTokens = 600;
       } else {
-        maxTokens = 200;
+        maxTokens = 400;
       }
       console.log(`📄 Using adaptive token limit (${maxTokens}) for document request`);
     }
@@ -616,14 +616,8 @@ export async function POST(request) {
     let lastError = null;
     let maxRetries;
     if (hasAttachments) {
-      const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
-      if (docSize > 100000) {
-        maxRetries = 5;
-      } else if (docSize > 50000) {
-        maxRetries = 4;
-      } else {
-        maxRetries = 3;
-      }
+      // Always try all endpoints for each retry for attachments
+      maxRetries = endpoints.length * 2; // Try each endpoint at least twice
     } else if (!hasAttachments && totalContentLength < 200) {
       maxRetries = 2;
     } else if (!hasAttachments && totalContentLength < 1000) {
@@ -631,19 +625,27 @@ export async function POST(request) {
     } else {
       maxRetries = 3;
     }
-    
+
     let attemptedEndpoints = new Set(); // Track which endpoints we've tried
-    
+    let endpointAttemptOrder = [...endpoints];
+    let endpointIndex = 0;
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        // Select the best endpoint using our load balancing algorithm
-        const selectedEndpoint = selectEndpoint();
-        
+        // For attachments, rotate through all endpoints before fallback
+        let selectedEndpoint;
+        if (hasAttachments) {
+          selectedEndpoint = endpointAttemptOrder[endpointIndex % endpointAttemptOrder.length];
+          endpointIndex++;
+        } else {
+          selectedEndpoint = selectEndpoint();
+        }
+
         // If we've already tried this endpoint and it's the only one, skip further attempts
         if (attemptedEndpoints.has(selectedEndpoint) && attemptedEndpoints.size >= endpoints.length) {
           console.log(`All endpoints tried and failed, skipping attempt ${attempt}`);
           // For document/large requests, always try all endpoints before fallback
-          if (hasAttachments) {
+          if (hasAttachments && attempt < maxRetries) {
             endpointStats.forEach(endpoint => {
               endpoint.isAvailable = true;
               endpoint.consecutiveFailures = Math.max(0, endpoint.consecutiveFailures - 1);
@@ -653,7 +655,7 @@ export async function POST(request) {
           }
           break;
         }
-        
+
         attemptedEndpoints.add(selectedEndpoint);
         console.log(`Attempt ${attempt}: Selected endpoint for request: ${selectedEndpoint}`);
         
