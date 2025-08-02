@@ -5,13 +5,13 @@ export const useAIResponse = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const generateAIResponse = useCallback(async function* (
+  const generateAIResponse = useCallback(async (
     prompt, 
     attachments = [], 
     previousMessages = [], 
     aiPreferences = null,
     messageCount = 0
-  ) {
+  ) => {
     setIsLoading(true);
     setError(null);
     
@@ -125,66 +125,11 @@ export const useAIResponse = () => {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Accept': 'text/event-stream' // Request streaming response
             },
             body: JSON.stringify(requestBody),
           });
 
           if (response.ok) {
-            // Handle streaming response
-            if (response.headers.get('Content-Type')?.includes('text/event-stream')) {
-              console.log('✅ Receiving streaming response...');
-              
-              const reader = response.body.getReader();
-              const decoder = new TextDecoder();
-              let fullResponse = '';
-              let done = false;
-              
-              while (!done) {
-                const { value, done: readerDone } = await reader.read();
-                done = readerDone;
-                
-                if (value) {
-                  const chunk = decoder.decode(value, { stream: true });
-                  
-                  // Process server-sent events
-                  const lines = chunk.split('\n\n');
-                  for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                      const dataStr = line.substring(6);
-                      if (dataStr === '[DONE]') {
-                        console.log('Streaming finished.');
-                        break;
-                      }
-                      try {
-                        const jsonData = JSON.parse(dataStr);
-                        const content = jsonData.choices?.[0]?.delta?.content || '';
-                        if (content) {
-                          fullResponse += content;
-                          // Yield partial response for real-time updates
-                          yield {
-                            response: fullResponse,
-                            streaming: true,
-                            tokenUsage: { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 }
-                          };
-                        }
-                      } catch (e) {
-                        console.error('Error parsing stream data chunk:', e, dataStr);
-                      }
-                    }
-                  }
-                }
-              }
-              
-              console.log(`✅ Streaming complete. Final response length: ${fullResponse.length}`);
-              return {
-                response: fullResponse,
-                streaming: false, // Mark as complete
-                tokenUsage: { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 } // Update with final usage if available
-              };
-            }
-
-            // Handle non-streaming JSON response
             const data = await response.json();
             
             // Check if this is a fallback response
@@ -198,7 +143,7 @@ export const useAIResponse = () => {
                 
                 return {
                   response: data.response,
-                  tokenUsage: data.tokenUsage,
+                  tokenUsage: data.tokenUsage || { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 },
                   fallback: true,
                   partialAnalysis: true,
                   processingHints: hints,
@@ -210,7 +155,7 @@ export const useAIResponse = () => {
               if (data.partialAnalysis) {
                 return {
                   response: data.response,
-                  tokenUsage: data.tokenUsage,
+                  tokenUsage: data.tokenUsage || { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 },
                   fallback: true,
                   partialAnalysis: true,
                   suggestions: data.suggestions || []
@@ -219,7 +164,7 @@ export const useAIResponse = () => {
               
               return {
                 response: data.response,
-                tokenUsage: data.tokenUsage,
+                tokenUsage: data.tokenUsage || { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 },
                 fallback: true
               };
             }

@@ -8,7 +8,6 @@ const endpoints = [
 
 // Add a flag to enable fallback responses when all endpoints fail
 const ENABLE_FALLBACK_RESPONSES = true;
-const STREAM_RESPONSE = true; // Enable/disable streaming
 
 // 'http://97.90.195.162:9999/v1/chat/completions',
 
@@ -526,51 +525,41 @@ export async function POST(request) {
     // Determine appropriate timeout based on request complexity
     const requestTimeout = getTimeoutForRequest(body, optimizedMessages);
 
-    // Prepare the request payload optimized for speed
+    // Prepare the request payload optimized for speed and reliability
     const aiRequestPayload = {
       model: body.aiConfig?.model || body.preferences?.model || 'default-model',
       messages: optimizedMessages,
       temperature: body.aiConfig?.temperature || body.preferences?.temperature || 0.7,
       max_tokens: Math.min(body.aiConfig?.maxTokens || body.preferences?.maxTokens || 400, 400), // Cap at 400 for speed
-      stream: STREAM_RESPONSE // Enable streaming
     };
 
     console.log('Request payload structure:', Object.keys(aiRequestPayload));
     console.log('Message count:', aiRequestPayload.messages.length);
     console.log('Using timeout:', requestTimeout + 'ms');
     
-    // Improved retry logic for better reliability
+    // Improved retry logic focusing on reliable endpoint selection
     let lastError = null;
-    let maxRetries = 3; // Increased to 3 for better reliability
+    let maxRetries = 2; // Reduced to 2 for faster failure detection
     let attemptedEndpoints = new Set(); // Track which endpoints we've tried
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        // Select the best endpoint using our load balancing algorithm
+        // Always try the highest priority endpoint first
         const selectedEndpoint = selectEndpoint();
         
-        // If we've already tried this endpoint and it's the only one, skip further attempts
+        // Skip if we've already tried all available endpoints
         if (attemptedEndpoints.has(selectedEndpoint) && attemptedEndpoints.size >= endpointStats.length) {
           console.log(`All endpoints tried and failed, skipping attempt ${attempt}`);
           break;
         }
         
         attemptedEndpoints.add(selectedEndpoint);
-        console.log(`Attempt ${attempt}: Selected endpoint for request: ${selectedEndpoint}`);
-        
-        // Add detailed logging for debugging
-        console.log('Request details:', {
-          endpoint: selectedEndpoint,
-          timeout: requestTimeout,
-          payloadSize: JSON.stringify(aiRequestPayload).length,
-          messageCount: aiRequestPayload.messages.length,
-          attemptedEndpoints: Array.from(attemptedEndpoints)
-        });
+        console.log(`Attempt ${attempt}: Using priority endpoint: ${selectedEndpoint}`);
         
         // Start timing the request for performance tracking
         const requestStartTime = Date.now();
 
-        // Make the AI API call with API key in headers
+        // Make the AI API call with optimized headers
         const response = await axios.post(
           selectedEndpoint,
           aiRequestPayload,
@@ -578,71 +567,57 @@ export async function POST(request) {
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${apiKey}`,
-              'Accept': 'text/event-stream' // Accept streaming responses
             },
             timeout: requestTimeout,
-            responseType: 'stream', // Tell axios to handle the response as a stream
-            // Add additional debugging options
             validateStatus: function (status) {
-              // Consider 2xx and some 4xx as valid for debugging
-              return status < 500;
+              return status < 500; // Accept all non-5xx responses
             }
           }
         );
 
-        // Calculate response time and update endpoint stats for future load balancing decisions
+        // Calculate response time and update endpoint stats
         const responseTime = Date.now() - requestStartTime;
         updateEndpointStats(selectedEndpoint, true, responseTime);
 
-        console.log(`AI response received with status: ${response.status}, time: ${responseTime}ms`);
+        console.log(`✅ AI response received - Status: ${response.status}, Time: ${responseTime}ms`);
 
         // Handle successful response
         if (response.status === 200) {
-          if (STREAM_RESPONSE) {
-            // For streaming responses, we pipe the stream back to the client
-            const stream = response.data;
-            return new NextResponse(stream, {
-              headers: {
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-              },
-            });
-          } else {
-            // For non-streaming responses
-            return NextResponse.json({
-              response: response.data.choices?.[0]?.message?.content || 'No response content',
-              tokenUsage: response.data.usage || {
-                total_tokens: 0,
-                prompt_tokens: 0,
-                completion_tokens: 0
-              }
-            });
-          }
+          const aiResponse = response.data.choices?.[0]?.message?.content || 'No response content';
+          const tokenUsage = response.data.usage || {
+            total_tokens: 0,
+            prompt_tokens: 0,
+            completion_tokens: 0
+          };
+
+          return NextResponse.json({
+            response: aiResponse,
+            tokenUsage: tokenUsage
+          });
         } else {
-          // Non-200 but non-500 status codes should be treated as errors
+          // Non-200 status codes are errors
           throw new Error(`HTTP ${response.status}: ${response.data?.error?.message || 'Unknown error'}`);
         }
       } catch (error) {
         lastError = error;
         
-        // Update endpoint stats for failures if we know which endpoint failed
+        // Update endpoint stats for failures
         if (error.config?.url) {
           updateEndpointStats(error.config.url, false, 0);
-          console.log(`Updated stats for ${error.config.url} to reflect failure`);
+          console.log(`❌ Endpoint ${error.config.url} failed, updated stats`);
         }
 
         console.error(`Attempt ${attempt} failed:`, {
           message: error.message,
           status: error.response?.status,
           code: error.code,
-          url: error.config?.url
+          endpoint: error.config?.url
         });
 
-        // If this is not the last attempt, wait before retrying
+        // Wait before retrying if we have more attempts and more endpoints to try
         if (attempt < maxRetries && attemptedEndpoints.size < endpointStats.length) {
-          const waitTime = Math.min(attempt * 500, 1500); // Progressive delay: 500ms, 1000ms, 1500ms max
-          console.log(`Waiting ${waitTime}ms before retry...`);
+          const waitTime = attempt * 300; // Quick retry: 300ms, 600ms
+          console.log(`⏱️ Waiting ${waitTime}ms before retry...`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
         }
       }
