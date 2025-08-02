@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import axios from 'axios';
 
 const endpoints = [
-  { url: 'http://belto.myftp.biz:9999/v1/chat/completions', priority: 1 }, // Highest priority
-  { url: 'http://47.34.185.47:9999/v1/chat/completions', priority: 2 }
+  'http://belto.myftp.biz:9999/v1/chat/completions', // Move working endpoint first
+  'http://47.34.185.47:9999/v1/chat/completions'
 ];
 
 // Add a flag to enable fallback responses when all endpoints fail
@@ -12,8 +12,8 @@ const ENABLE_FALLBACK_RESPONSES = true;
 // 'http://97.90.195.162:9999/v1/chat/completions',
 
 // Endpoint health tracking with circuit breaker pattern
-const endpointStats = endpoints.map(e => ({
-  ...e,
+const endpointStats = endpoints.map(url => ({
+  url,
   isAvailable: true,
   failCount: 0,
   lastResponseTime: 0,
@@ -149,9 +149,8 @@ function selectEndpoint() {
   );
   
   if (availableEndpoints.length === 0) {
-    // All endpoints are unavailable or circuit breaker is open, reset the highest priority one for retry
-    console.log('All endpoints unavailable or circuit breaker open, resetting the highest priority one for retry');
-    endpointStats.sort((a, b) => a.priority - b.priority);
+    // All endpoints are unavailable or circuit breaker is open, reset the first one for retry
+    console.log('All endpoints unavailable or circuit breaker open, resetting the first one for retry');
     endpointStats[0].isAvailable = true;
     endpointStats[0].failCount = 0;
     endpointStats[0].consecutiveFailures = 0;
@@ -159,25 +158,21 @@ function selectEndpoint() {
     return endpointStats[0].url;
   }
   
-  // Choose the best available endpoint
+  // Choose the fastest available endpoint with the least recent activity
   availableEndpoints.sort((a, b) => {
-    // 1. Prioritize by specified priority
-    if (a.priority !== b.priority) {
-      return a.priority - b.priority;
-    }
-    // 2. Prioritize by circuit breaker status
+    // First prioritize by availability and circuit breaker status
     if (a.circuitBreakerOpen !== b.circuitBreakerOpen) {
       return a.circuitBreakerOpen ? 1 : -1;
     }
-    // 3. Prioritize by consecutive failures (lower is better)
+    // Then by consecutive failures (prefer lower failures)
     if (a.consecutiveFailures !== b.consecutiveFailures) {
       return a.consecutiveFailures - b.consecutiveFailures;
     }
-    // 4. Prioritize by response time (faster is better)
+    // Then prioritize endpoints with faster response times (but only if they've been tested)
     if (a.lastResponseTime > 0 && b.lastResponseTime > 0) {
       return a.lastResponseTime - b.lastResponseTime;
     }
-    // 5. Prioritize by total failures (lower is better)
+    // Finally, if response times are equal or untested, prioritize by least total failures
     return a.failCount - b.failCount;
   });
   
@@ -525,41 +520,50 @@ export async function POST(request) {
     // Determine appropriate timeout based on request complexity
     const requestTimeout = getTimeoutForRequest(body, optimizedMessages);
 
-    // Prepare the request payload optimized for speed and reliability
+    // Prepare the request payload optimized for speed
     const aiRequestPayload = {
       model: body.aiConfig?.model || body.preferences?.model || 'default-model',
       messages: optimizedMessages,
       temperature: body.aiConfig?.temperature || body.preferences?.temperature || 0.7,
-      max_tokens: Math.min(body.aiConfig?.maxTokens || body.preferences?.maxTokens || 400, 400), // Cap at 400 for speed
+      max_tokens: Math.min(body.aiConfig?.maxTokens || body.preferences?.maxTokens || 300, 300), // Cap at 300 for speed
     };
 
     console.log('Request payload structure:', Object.keys(aiRequestPayload));
     console.log('Message count:', aiRequestPayload.messages.length);
     console.log('Using timeout:', requestTimeout + 'ms');
     
-    // Improved retry logic focusing on reliable endpoint selection
+    // Improved retry logic for better reliability
     let lastError = null;
-    let maxRetries = 2; // Reduced to 2 for faster failure detection
+    let maxRetries = 3; // Increased to 3 for better reliability
     let attemptedEndpoints = new Set(); // Track which endpoints we've tried
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        // Always try the highest priority endpoint first
+        // Select the best endpoint using our load balancing algorithm
         const selectedEndpoint = selectEndpoint();
         
-        // Skip if we've already tried all available endpoints
-        if (attemptedEndpoints.has(selectedEndpoint) && attemptedEndpoints.size >= endpointStats.length) {
+        // If we've already tried this endpoint and it's the only one, skip further attempts
+        if (attemptedEndpoints.has(selectedEndpoint) && attemptedEndpoints.size >= endpoints.length) {
           console.log(`All endpoints tried and failed, skipping attempt ${attempt}`);
           break;
         }
         
         attemptedEndpoints.add(selectedEndpoint);
-        console.log(`Attempt ${attempt}: Using priority endpoint: ${selectedEndpoint}`);
+        console.log(`Attempt ${attempt}: Selected endpoint for request: ${selectedEndpoint}`);
+        
+        // Add detailed logging for debugging
+        console.log('Request details:', {
+          endpoint: selectedEndpoint,
+          timeout: requestTimeout,
+          payloadSize: JSON.stringify(aiRequestPayload).length,
+          messageCount: aiRequestPayload.messages.length,
+          attemptedEndpoints: Array.from(attemptedEndpoints)
+        });
         
         // Start timing the request for performance tracking
         const requestStartTime = Date.now();
 
-        // Make the AI API call with optimized headers
+        // Make the AI API call with API key in headers
         const response = await axios.post(
           selectedEndpoint,
           aiRequestPayload,
@@ -569,55 +573,54 @@ export async function POST(request) {
               'Authorization': `Bearer ${apiKey}`,
             },
             timeout: requestTimeout,
+            // Add additional debugging options
             validateStatus: function (status) {
-              return status < 500; // Accept all non-5xx responses
+              // Consider 2xx and some 4xx as valid for debugging
+              return status < 500;
             }
           }
         );
 
-        // Calculate response time and update endpoint stats
+        // Calculate response time and update endpoint stats for future load balancing decisions
         const responseTime = Date.now() - requestStartTime;
         updateEndpointStats(selectedEndpoint, true, responseTime);
 
-        console.log(`✅ AI response received - Status: ${response.status}, Time: ${responseTime}ms`);
+        console.log(`AI response received with status: ${response.status}, time: ${responseTime}ms`);
 
         // Handle successful response
         if (response.status === 200) {
-          const aiResponse = response.data.choices?.[0]?.message?.content || 'No response content';
-          const tokenUsage = response.data.usage || {
-            total_tokens: 0,
-            prompt_tokens: 0,
-            completion_tokens: 0
-          };
-
           return NextResponse.json({
-            response: aiResponse,
-            tokenUsage: tokenUsage
+            response: response.data.choices?.[0]?.message?.content || 'No response content',
+            tokenUsage: response.data.usage || {
+              total_tokens: 0,
+              prompt_tokens: 0,
+              completion_tokens: 0
+            }
           });
         } else {
-          // Non-200 status codes are errors
+          // Non-200 but non-500 status codes should be treated as errors
           throw new Error(`HTTP ${response.status}: ${response.data?.error?.message || 'Unknown error'}`);
         }
       } catch (error) {
         lastError = error;
         
-        // Update endpoint stats for failures
+        // Update endpoint stats for failures if we know which endpoint failed
         if (error.config?.url) {
           updateEndpointStats(error.config.url, false, 0);
-          console.log(`❌ Endpoint ${error.config.url} failed, updated stats`);
+          console.log(`Updated stats for ${error.config.url} to reflect failure`);
         }
 
         console.error(`Attempt ${attempt} failed:`, {
           message: error.message,
           status: error.response?.status,
           code: error.code,
-          endpoint: error.config?.url
+          url: error.config?.url
         });
 
-        // Wait before retrying if we have more attempts and more endpoints to try
-        if (attempt < maxRetries && attemptedEndpoints.size < endpointStats.length) {
-          const waitTime = attempt * 300; // Quick retry: 300ms, 600ms
-          console.log(`⏱️ Waiting ${waitTime}ms before retry...`);
+        // If this is not the last attempt, wait before retrying
+        if (attempt < maxRetries && attemptedEndpoints.size < endpoints.length) {
+          const waitTime = Math.min(attempt * 500, 1500); // Progressive delay: 500ms, 1000ms, 1500ms max
+          console.log(`Waiting ${waitTime}ms before retry...`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
         }
       }

@@ -143,7 +143,7 @@ export const useAIResponse = () => {
                 
                 return {
                   response: data.response,
-                  tokenUsage: data.tokenUsage || { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 },
+                  tokenUsage: data.tokenUsage,
                   fallback: true,
                   partialAnalysis: true,
                   processingHints: hints,
@@ -155,7 +155,7 @@ export const useAIResponse = () => {
               if (data.partialAnalysis) {
                 return {
                   response: data.response,
-                  tokenUsage: data.tokenUsage || { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 },
+                  tokenUsage: data.tokenUsage,
                   fallback: true,
                   partialAnalysis: true,
                   suggestions: data.suggestions || []
@@ -164,7 +164,7 @@ export const useAIResponse = () => {
               
               return {
                 response: data.response,
-                tokenUsage: data.tokenUsage || { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 },
+                tokenUsage: data.tokenUsage,
                 fallback: true
               };
             }
