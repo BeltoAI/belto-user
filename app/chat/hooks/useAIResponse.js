@@ -122,17 +122,17 @@ export const useAIResponse = () => {
         });
       }
 
-      // Enhanced retry logic with optimized attempts based on message complexity
+      // Enhanced retry logic with improved attempts based on message complexity
       let lastError = null;
       let maxRetries;
       
-      // Determine retry strategy based on message complexity
+      // Determine retry strategy based on message complexity - IMPROVED STABILITY
       if (isSimpleMessage) {
-        maxRetries = 1; // No retries for simple messages - fail fast for speed
+        maxRetries = 2; // Increased from 1 for better reliability
       } else if (attachments && attachments.length > 0) {
-        maxRetries = 3; // More retries for document processing
+        maxRetries = 3; // Keep same for document processing
       } else {
-        maxRetries = 2; // Standard retries for normal messages
+        maxRetries = 3; // Increased for normal messages
       }
       
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -223,14 +223,14 @@ export const useAIResponse = () => {
           
           // If this is not the last attempt and it's a potentially recoverable error, retry
           if (attempt < maxRetries && (response.status === 503 || response.status >= 500)) {
-            // OPTIMIZED wait times based on message complexity
+            // IMPROVED wait times based on message complexity
             let waitTime;
             if (isSimpleMessage) {
-              waitTime = 100; // Minimal wait for simple messages
+              waitTime = 300; // Increased from 100ms for simple messages
             } else if (attachments && attachments.length > 0) {
-              waitTime = attempt * 1000; // Longer wait for document processing
+              waitTime = attempt * 1000; // Keep longer wait for document processing
             } else {
-              waitTime = attempt * 300; // Quick retry for normal messages
+              waitTime = attempt * 500; // Increased retry for normal messages
             }
             
             console.log(`⏱️ Waiting ${waitTime}ms before retry...`);
@@ -246,14 +246,14 @@ export const useAIResponse = () => {
           
           // If this is not the last attempt, wait before retrying
           if (attempt < maxRetries) {
-            // OPTIMIZED wait times based on message complexity
+            // IMPROVED wait times based on message complexity
             let waitTime;
             if (isSimpleMessage) {
-              waitTime = 100; // Minimal wait for simple messages
+              waitTime = 300; // Increased from 100ms for simple messages
             } else if (attachments && attachments.length > 0) {
-              waitTime = attempt * 1000; // Longer wait for document processing
+              waitTime = attempt * 1000; // Keep longer wait for document processing
             } else {
-              waitTime = attempt * 300; // Quick retry for normal messages
+              waitTime = attempt * 500; // Increased retry for normal messages
             }
             
             console.log(`⏱️ Waiting ${waitTime}ms before retry...`);

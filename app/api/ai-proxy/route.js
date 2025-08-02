@@ -6,7 +6,7 @@ const endpoints = [
   'http://47.34.185.47:9999/v1/chat/completions'
 ];
 
-// Add a flag to enable fallback responses when all endpoints fail
+// Add a flag to enable fallback responses when all endpoints fail - ENABLED for stability
 const ENABLE_FALLBACK_RESPONSES = true;
 
 // 'http://97.90.195.162:9999/v1/chat/completions',
@@ -23,15 +23,15 @@ const endpointStats = endpoints.map(url => ({
   lastCircuitBreakerCheck: Date.now()
 }));
 
-// Optimized timeouts for faster responses
-const FAST_TIMEOUT_MS = 3000; // Ultra-fast timeout for simple messages
-const BASE_TIMEOUT_MS = 6000; // Base timeout for normal requests
-const ATTACHMENT_TIMEOUT_MS = 25000; // Extended timeout for requests with attachments or complex content
-const MAX_CONSECUTIVE_FAILURES = 1; // Reduce failures before marking endpoint as unavailable
-const RETRY_INTERVAL_MS = 20000; // Try unavailable endpoints again after 20 seconds
-const HEALTH_CHECK_THRESHOLD = 120000; // 2 minutes in ms
-const CIRCUIT_BREAKER_THRESHOLD = 2; // Number of failures to open circuit breaker
-const CIRCUIT_BREAKER_TIMEOUT = 30000; // 30 second timeout for circuit breaker
+// Optimized timeouts for faster responses while maintaining reliability
+const FAST_TIMEOUT_MS = 4000; // Balanced timeout for simple messages
+const BASE_TIMEOUT_MS = 7000; // Balanced timeout for normal requests  
+const ATTACHMENT_TIMEOUT_MS = 20000; // Reduced for faster document processing
+const MAX_CONSECUTIVE_FAILURES = 2; // More balanced failure threshold
+const RETRY_INTERVAL_MS = 25000; // Balanced retry interval
+const HEALTH_CHECK_THRESHOLD = 120000; // Back to 2 minutes for more frequent checks
+const CIRCUIT_BREAKER_THRESHOLD = 3; // More balanced circuit breaker
+const CIRCUIT_BREAKER_TIMEOUT = 45000; // Reduced to 45 seconds
 
 /**
  * Determines appropriate timeout based on request complexity - OPTIMIZED FOR SPEED
@@ -44,6 +44,12 @@ function getTimeoutForRequest(body, messages) {
   const hasAttachments = body.attachments && body.attachments.length > 0;
   const hasLargeContent = messages.some(msg => msg.content && msg.content.length > 1000);
   const totalContentLength = messages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
+  
+  // ULTRA-FAST TRACK: Even more aggressive for very simple messages
+  if (!hasAttachments && !hasLargeContent && totalContentLength < 100) {
+    console.log(`🚀 Using ULTRA-FAST timeout (3000ms) for very simple message: ${totalContentLength} chars`);
+    return 3000; // Ultra-fast for "hi", "hello", etc.
+  }
   
   // FAST TRACK: Ultra-fast processing for simple messages
   if (!hasAttachments && !hasLargeContent && totalContentLength < 200) {
@@ -157,12 +163,14 @@ function selectEndpoint() {
   );
   
   if (availableEndpoints.length === 0) {
-    // All endpoints are unavailable or circuit breaker is open, reset the first one for retry
-    console.log('All endpoints unavailable or circuit breaker open, resetting the first one for retry');
-    endpointStats[0].isAvailable = true;
-    endpointStats[0].failCount = 0;
-    endpointStats[0].consecutiveFailures = 0;
-    endpointStats[0].circuitBreakerOpen = false;
+    // All endpoints are unavailable or circuit breaker is open, reset ALL endpoints for retry
+    console.log('⚠️ All endpoints unavailable or circuit breaker open, resetting ALL endpoints for retry');
+    endpointStats.forEach(endpoint => {
+      endpoint.isAvailable = true;
+      endpoint.failCount = Math.max(0, endpoint.failCount - 1); // Reduce fail count
+      endpoint.consecutiveFailures = 0;
+      endpoint.circuitBreakerOpen = false;
+    });
     return endpointStats[0].url;
   }
   
@@ -230,7 +238,7 @@ function updateEndpointStats(url, success, responseTime) {
  * Performs a health check on all endpoints
  */
 async function healthCheck() {
-  console.log('Performing health check on all endpoints');
+  console.log('🔍 Performing health check on all endpoints');
   
   const checks = endpoints.map(async (url) => {
     const endpoint = endpointStats.find(e => e.url === url);
@@ -245,8 +253,8 @@ async function healthCheck() {
         max_tokens: 10
       };
       
-      await axios.post(url, testPayload, {
-        timeout: 5000, // Short timeout for health check
+      const response = await axios.post(url, testPayload, {
+        timeout: 8000, // Increased timeout for health check
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${process.env.AI_API_KEY || 'test'}`
@@ -255,10 +263,15 @@ async function healthCheck() {
       
       const responseTime = Date.now() - startTime;
       updateEndpointStats(url, true, responseTime);
-      console.log(`Health check for ${url}: OK (${responseTime}ms)`);
+      console.log(`✅ Health check for ${url}: OK (${responseTime}ms)`);
+      console.log(`   Response: ${response.data.choices?.[0]?.message?.content || 'No content'}`);
     } catch (error) {
-      console.log(`Health check for ${url}: FAILED - ${error.message}`);
-      updateEndpointStats(url, false, 0);
+      console.log(`❌ Health check for ${url}: FAILED`);
+      console.log(`   Error: ${error.code || error.message}`);
+      console.log(`   Status: ${error.response?.status || 'No response'}`);
+      console.log(`   Data: ${JSON.stringify(error.response?.data || {})}`);
+      // Don't mark as failed during health check to avoid being too aggressive
+      // updateEndpointStats(url, false, 0);
     }
   });
   
@@ -481,7 +494,10 @@ export async function POST(request) {
       let systemContent;
       
       // OPTIMIZED system messages for speed
-      if (!hasAttachments && totalContentLength < 200) {
+      if (!hasAttachments && totalContentLength < 100) {
+        // Ultra-short system message for very simple requests like "hi"
+        systemContent = 'You are BELTO. Be very brief.';
+      } else if (!hasAttachments && totalContentLength < 200) {
         // Ultra-short system message for simple requests
         systemContent = 'You are BELTO, a helpful AI assistant. Be concise.';
       } else if (body.attachments && body.attachments.length > 0) {
@@ -540,15 +556,18 @@ export async function POST(request) {
     const totalContentLength = optimizedMessages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
     const hasAttachments = body.attachments && body.attachments.length > 0;
     
-    // FAST TRACK: Ultra-low token limits for simple messages
-    if (!hasAttachments && totalContentLength < 200) {
-      maxTokens = 50; // Very short responses for simple greetings
-      console.log(`⚡ Using FAST token limit (${maxTokens}) for simple message`);
+    // ULTRA-FAST TRACK: Extremely low token limits for very simple messages
+    if (!hasAttachments && totalContentLength < 100) {
+      maxTokens = 20; // Extremely short responses for "hi", "hello", etc.
+      console.log(`🚀 Using ULTRA-FAST token limit (${maxTokens}) for very simple message`);
+    } else if (!hasAttachments && totalContentLength < 200) {
+      maxTokens = 30; // Very short responses for simple greetings
+      console.log(`⚡ Using ULTRA-FAST token limit (${maxTokens}) for simple message`);
     } else if (!hasAttachments && totalContentLength < 500) {
-      maxTokens = 100; // Short responses for basic questions
+      maxTokens = 80; // Short responses for basic questions
       console.log(`🚀 Using optimized token limit (${maxTokens}) for basic request`);
     } else if (!hasAttachments && totalContentLength < 1000) {
-      maxTokens = 150; // Medium responses for normal conversations
+      maxTokens = 120; // Medium responses for normal conversations
       console.log(`📝 Using standard token limit (${maxTokens}) for normal request`);
     }
 
@@ -565,17 +584,17 @@ export async function POST(request) {
     console.log('Using timeout:', requestTimeout + 'ms');
     console.log('Token limit:', aiRequestPayload.max_tokens);
     
-    // OPTIMIZED retry logic - fewer retries for simple messages
+    // OPTIMIZED retry logic - more stable retry counts
     let lastError = null;
     
-    // Determine retry strategy based on request complexity
+    // Determine retry strategy based on request complexity - IMPROVED STABILITY
     let maxRetries;
     if (!hasAttachments && totalContentLength < 200) {
-      maxRetries = 1; // No retries for simple messages - fail fast
+      maxRetries = 2; // Increased from 1 - allow at least one retry
     } else if (!hasAttachments && totalContentLength < 1000) {
-      maxRetries = 2; // One retry for normal messages
+      maxRetries = 3; // Increased from 2 for better reliability
     } else {
-      maxRetries = 3; // Full retries for complex/document requests
+      maxRetries = 3; // Keep same for complex requests
     }
     
     let attemptedEndpoints = new Set(); // Track which endpoints we've tried
@@ -588,6 +607,15 @@ export async function POST(request) {
         // If we've already tried this endpoint and it's the only one, skip further attempts
         if (attemptedEndpoints.has(selectedEndpoint) && attemptedEndpoints.size >= endpoints.length) {
           console.log(`All endpoints tried and failed, skipping attempt ${attempt}`);
+          
+          // Reset all endpoints if we've tried them all - AGGRESSIVE RECOVERY
+          console.log('🔄 Resetting all endpoints for aggressive recovery');
+          endpointStats.forEach(endpoint => {
+            endpoint.isAvailable = true;
+            endpoint.consecutiveFailures = Math.max(0, endpoint.consecutiveFailures - 1);
+            endpoint.circuitBreakerOpen = false;
+          });
+          
           break;
         }
         
@@ -595,12 +623,14 @@ export async function POST(request) {
         console.log(`Attempt ${attempt}: Selected endpoint for request: ${selectedEndpoint}`);
         
         // Add detailed logging for debugging
-        console.log('Request details:', {
+        console.log('🔍 Request details:', {
           endpoint: selectedEndpoint,
           timeout: requestTimeout,
           payloadSize: JSON.stringify(aiRequestPayload).length,
           messageCount: aiRequestPayload.messages.length,
-          attemptedEndpoints: Array.from(attemptedEndpoints)
+          attemptedEndpoints: Array.from(attemptedEndpoints),
+          apiKeyPresent: !!apiKey,
+          apiKeyLength: apiKey ? apiKey.length : 0
         });
         
         // Start timing the request for performance tracking
@@ -616,10 +646,9 @@ export async function POST(request) {
               'Authorization': `Bearer ${apiKey}`,
             },
             timeout: requestTimeout,
-            // Add additional debugging options
+            // Remove validateStatus to get proper error responses
             validateStatus: function (status) {
-              // Consider 2xx and some 4xx as valid for debugging
-              return status < 500;
+              return status < 500; // Accept all status codes under 500
             }
           }
         );
@@ -632,6 +661,7 @@ export async function POST(request) {
 
         // Handle successful response
         if (response.status === 200) {
+          console.log(`✅ AI response successful: ${response.data.choices?.[0]?.message?.content?.substring(0, 100)}...`);
           return NextResponse.json({
             response: response.data.choices?.[0]?.message?.content || 'No response content',
             tokenUsage: response.data.usage || {
@@ -641,8 +671,16 @@ export async function POST(request) {
             }
           });
         } else {
+          // Log detailed error for non-200 responses
+          console.error(`❌ Non-200 response from ${selectedEndpoint}:`, {
+            status: response.status,
+            statusText: response.statusText,
+            data: response.data,
+            headers: response.headers
+          });
+          
           // Non-200 but non-500 status codes should be treated as errors
-          throw new Error(`HTTP ${response.status}: ${response.data?.error?.message || 'Unknown error'}`);
+          throw new Error(`HTTP ${response.status}: ${response.data?.error?.message || response.statusText || 'Unknown error'}`);
         }
       } catch (error) {
         lastError = error;
@@ -653,23 +691,26 @@ export async function POST(request) {
           console.log(`Updated stats for ${error.config.url} to reflect failure`);
         }
 
-        console.error(`Attempt ${attempt} failed:`, {
+        console.error(`❌ Attempt ${attempt} failed:`, {
           message: error.message,
           status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
           code: error.code,
-          url: error.config?.url
+          url: error.config?.url,
+          timeout: error.code === 'ECONNABORTED' ? requestTimeout : 'N/A'
         });
 
         // If this is not the last attempt, wait before retrying
         if (attempt < maxRetries && attemptedEndpoints.size < endpoints.length) {
-          // OPTIMIZED wait times - shorter delays for faster responses
+          // IMPROVED wait times - less aggressive delays
           let waitTime;
           if (totalContentLength < 200) {
-            waitTime = 100; // Minimal wait for simple messages
+            waitTime = 300; // Increased from 100ms for simple messages
           } else if (totalContentLength < 1000) {
-            waitTime = Math.min(attempt * 200, 500); // Quick retry for normal messages
+            waitTime = Math.min(attempt * 500, 1000); // Increased delay for normal messages
           } else {
-            waitTime = Math.min(attempt * 500, 1500); // Progressive delay for complex requests
+            waitTime = Math.min(attempt * 1000, 2000); // Progressive delay for complex requests
           }
           
           console.log(`Waiting ${waitTime}ms before retry...`);
@@ -866,4 +907,22 @@ export async function POST(request) {
 
 export async function OPTIONS(request) {
   return NextResponse.json({}, { status: 200 });
+}
+
+export async function GET(request) {
+  // Status endpoint for debugging
+  return NextResponse.json({
+    status: 'online',
+    endpoints: endpointStats.map(stat => ({
+      url: stat.url,
+      isAvailable: stat.isAvailable,
+      failCount: stat.failCount,
+      lastResponseTime: stat.lastResponseTime,
+      consecutiveFailures: stat.consecutiveFailures,
+      circuitBreakerOpen: stat.circuitBreakerOpen,
+      lastChecked: new Date(stat.lastChecked).toISOString()
+    })),
+    apiKeyConfigured: !!process.env.AI_API_KEY,
+    timestamp: new Date().toISOString()
+  });
 }
