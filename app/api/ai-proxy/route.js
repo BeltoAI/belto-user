@@ -50,11 +50,27 @@ function getTimeoutForRequest(body, messages) {
     console.log(`🚀 Using ULTRA-FAST timeout (3000ms) for very simple message: ${totalContentLength} chars`);
     return 3000; // Ultra-fast for "hi", "hello", etc.
   }
-  
   // FAST TRACK: Ultra-fast processing for simple messages
   if (!hasAttachments && !hasLargeContent && totalContentLength < 200) {
     console.log(`⚡ Using FAST timeout (${FAST_TIMEOUT_MS}ms) for simple message: ${totalContentLength} chars`);
     return FAST_TIMEOUT_MS;
+  }
+  // ADAPTIVE: For document/large requests, scale timeout with size
+  if (hasAttachments) {
+    const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
+    if (docSize > 100000) {
+      console.log(`📄 Large document detected (${docSize} chars), using 60s timeout`);
+      return 60000;
+    } else if (docSize > 50000) {
+      console.log(`📄 Medium-large document detected (${docSize} chars), using 45s timeout`);
+      return 45000;
+    } else if (docSize > 20000) {
+      console.log(`📄 Medium document detected (${docSize} chars), using 30s timeout`);
+      return 30000;
+    } else {
+      console.log(`📄 Small document detected (${docSize} chars), using 20s timeout`);
+      return 20000;
+    }
   }
   
   // Use processing hints for smarter timeout calculation (only for complex requests)
@@ -555,20 +571,32 @@ export async function POST(request) {
     let maxTokens = 300; // Default for complex requests
     const totalContentLength = optimizedMessages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
     const hasAttachments = body.attachments && body.attachments.length > 0;
-    
     // ULTRA-FAST TRACK: Extremely low token limits for very simple messages
     if (!hasAttachments && totalContentLength < 100) {
-      maxTokens = 20; // Extremely short responses for "hi", "hello", etc.
+      maxTokens = 20;
       console.log(`🚀 Using ULTRA-FAST token limit (${maxTokens}) for very simple message`);
     } else if (!hasAttachments && totalContentLength < 200) {
-      maxTokens = 30; // Very short responses for simple greetings
+      maxTokens = 30;
       console.log(`⚡ Using ULTRA-FAST token limit (${maxTokens}) for simple message`);
     } else if (!hasAttachments && totalContentLength < 500) {
-      maxTokens = 80; // Short responses for basic questions
+      maxTokens = 80;
       console.log(`🚀 Using optimized token limit (${maxTokens}) for basic request`);
     } else if (!hasAttachments && totalContentLength < 1000) {
-      maxTokens = 120; // Medium responses for normal conversations
+      maxTokens = 120;
       console.log(`📝 Using standard token limit (${maxTokens}) for normal request`);
+    } else if (hasAttachments) {
+      // ADAPTIVE: For document/large requests, scale token limit with size
+      const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
+      if (docSize > 100000) {
+        maxTokens = 600;
+      } else if (docSize > 50000) {
+        maxTokens = 400;
+      } else if (docSize > 20000) {
+        maxTokens = 300;
+      } else {
+        maxTokens = 200;
+      }
+      console.log(`📄 Using adaptive token limit (${maxTokens}) for document request`);
     }
 
     // Prepare the request payload optimized for speed
@@ -584,17 +612,24 @@ export async function POST(request) {
     console.log('Using timeout:', requestTimeout + 'ms');
     console.log('Token limit:', aiRequestPayload.max_tokens);
     
-    // OPTIMIZED retry logic - more stable retry counts
+    // ADAPTIVE retry logic: more retries for document/large requests
     let lastError = null;
-    
-    // Determine retry strategy based on request complexity - IMPROVED STABILITY
     let maxRetries;
-    if (!hasAttachments && totalContentLength < 200) {
-      maxRetries = 2; // Increased from 1 - allow at least one retry
+    if (hasAttachments) {
+      const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
+      if (docSize > 100000) {
+        maxRetries = 5;
+      } else if (docSize > 50000) {
+        maxRetries = 4;
+      } else {
+        maxRetries = 3;
+      }
+    } else if (!hasAttachments && totalContentLength < 200) {
+      maxRetries = 2;
     } else if (!hasAttachments && totalContentLength < 1000) {
-      maxRetries = 3; // Increased from 2 for better reliability
+      maxRetries = 3;
     } else {
-      maxRetries = 3; // Keep same for complex requests
+      maxRetries = 3;
     }
     
     let attemptedEndpoints = new Set(); // Track which endpoints we've tried
@@ -607,15 +642,15 @@ export async function POST(request) {
         // If we've already tried this endpoint and it's the only one, skip further attempts
         if (attemptedEndpoints.has(selectedEndpoint) && attemptedEndpoints.size >= endpoints.length) {
           console.log(`All endpoints tried and failed, skipping attempt ${attempt}`);
-          
-          // Reset all endpoints if we've tried them all - AGGRESSIVE RECOVERY
-          console.log('🔄 Resetting all endpoints for aggressive recovery');
-          endpointStats.forEach(endpoint => {
-            endpoint.isAvailable = true;
-            endpoint.consecutiveFailures = Math.max(0, endpoint.consecutiveFailures - 1);
-            endpoint.circuitBreakerOpen = false;
-          });
-          
+          // For document/large requests, always try all endpoints before fallback
+          if (hasAttachments) {
+            endpointStats.forEach(endpoint => {
+              endpoint.isAvailable = true;
+              endpoint.consecutiveFailures = Math.max(0, endpoint.consecutiveFailures - 1);
+              endpoint.circuitBreakerOpen = false;
+            });
+            continue;
+          }
           break;
         }
         
@@ -703,16 +738,24 @@ export async function POST(request) {
 
         // If this is not the last attempt, wait before retrying
         if (attempt < maxRetries && attemptedEndpoints.size < endpoints.length) {
-          // IMPROVED wait times - less aggressive delays
+          // ADAPTIVE: Longer wait for document/large requests
           let waitTime;
-          if (totalContentLength < 200) {
-            waitTime = 300; // Increased from 100ms for simple messages
+          if (hasAttachments) {
+            const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
+            if (docSize > 100000) {
+              waitTime = 5000;
+            } else if (docSize > 50000) {
+              waitTime = 3000;
+            } else {
+              waitTime = 2000;
+            }
+          } else if (totalContentLength < 200) {
+            waitTime = 300;
           } else if (totalContentLength < 1000) {
-            waitTime = Math.min(attempt * 500, 1000); // Increased delay for normal messages
+            waitTime = Math.min(attempt * 500, 1000);
           } else {
-            waitTime = Math.min(attempt * 1000, 2000); // Progressive delay for complex requests
+            waitTime = Math.min(attempt * 1000, 2000);
           }
-          
           console.log(`Waiting ${waitTime}ms before retry...`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
         }
@@ -721,7 +764,6 @@ export async function POST(request) {
 
     // If we get here, all retries failed
     const error = lastError;
-
     // Log detailed error information
     console.error('AI API Error:', {
       message: error.message,
@@ -731,7 +773,6 @@ export async function POST(request) {
       url: error.config?.url,
       requestBody: error.config?.data ? JSON.parse(error.config.data) : 'No request body'
     });
-
     // Provide more specific error messages based on the error type
     let errorMessage = 'Failed to generate AI response';
     let statusCode = 500;
@@ -740,7 +781,6 @@ export async function POST(request) {
       code: error.code,
       status: error.response?.status
     };
-
     // Enhanced error handling with endpoint diagnostics
     if (error.code === 'ECONNREFUSED' || error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
       console.error('Connection error details:', {
@@ -750,119 +790,23 @@ export async function POST(request) {
         availableEndpoints: endpointStats.filter(e => e.isAvailable).length,
         totalEndpoints: endpointStats.length
       });
-      
       // If fallback is enabled and all endpoints failed, provide a helpful response
       if (ENABLE_FALLBACK_RESPONSES) {
-        // Determine if this was a complex request for better error messaging
-        const hasAttachments = body.attachments && body.attachments.length > 0;
-        const isComplexRequest = requestTimeout > BASE_TIMEOUT_MS;
-        
-        // For document attachments, try to provide enhanced basic analysis instead of complete failure
         if (hasAttachments && body.attachments[0].content) {
-          const content = body.attachments[0].content;
-          const fileName = body.attachments[0].name || 'document';
-          const hints = body.processingHints;
-          
-          console.log('📄 Generating enhanced fallback analysis for document:', fileName);
-          
-          // Enhanced document analysis using processing hints
-          let basicAnalysis = `📄 **Document Analysis for ${fileName}**\n\n`;
-          
-          // Use processing hints for better analysis
-          if (hints) {
-            basicAnalysis += `*Document Type:* ${hints.documentType.toUpperCase()}\n`;
-            basicAnalysis += `*Analysis Type:* ${hints.analysisType === 'summary' ? 'Summary' : 'Detailed Analysis'}\n`;
-            basicAnalysis += `*Content Size:* ${Math.floor(hints.contentLength/1000)}KB\n\n`;
-          }
-          
-          // Analyze document structure and content
-          const wordCount = content.split(/\s+/).length;
-          const paragraphCount = content.split(/\n\s*\n/).length;
-          const hasHeadings = /^#+\s|\n#+\s|heading|title|chapter|section/i.test(content);
-          const hasNumbers = /\b\d+(\.\d+)?\b/.test(content);
-          const hasCode = /```|function|class|var|let|const|public|private/.test(content);
-          const hasBullets = /^\s*[\*\-\•]/m.test(content);
-          const hasLinks = /https?:\/\/|www\./i.test(content);
-          
-          // Document statistics
-          basicAnalysis += `**Document Overview:**\n`;
-          basicAnalysis += `• ${wordCount} words across ${paragraphCount} sections\n`;
-          
-          if (hasHeadings) basicAnalysis += `• Structured with headings and sections\n`;
-          if (hasCode) basicAnalysis += `• Contains code or technical content\n`;
-          if (hasNumbers) basicAnalysis += `• Includes numerical data and statistics\n`;
-          if (hasBullets) basicAnalysis += `• Uses bullet points and lists\n`;
-          if (hasLinks) basicAnalysis += `• Contains web links or references\n`;
-          
-          // Extract key content sections
-          const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 20);
-          const firstSentence = sentences[0]?.trim();
-          const lastSentence = sentences[sentences.length - 1]?.trim();
-          
-          if (firstSentence) {
-            basicAnalysis += `\n**Opening Content:**\n"${firstSentence}..."\n`;
-          }
-          
-          // Try to identify key topics/themes
-          const commonWords = content.toLowerCase()
-            .split(/\W+/)
-            .filter(word => word.length > 4)
-            .reduce((acc, word) => {
-              acc[word] = (acc[word] || 0) + 1;
-              return acc;
-            }, {});
-            
-          const topWords = Object.entries(commonWords)
-            .sort(([,a], [,b]) => b - a)
-            .slice(0, 5)
-            .map(([word]) => word);
-            
-          if (topWords.length > 0) {
-            basicAnalysis += `\n**Key Themes:** ${topWords.join(', ')}\n`;
-          }
-          
-          if (lastSentence && lastSentence !== firstSentence) {
-            basicAnalysis += `\n**Conclusion Area:**\n"${lastSentence}..."\n`;
-          }
-          
-          // Provide specific suggestions based on processing hints
-          basicAnalysis += `\n**🔧 Service Status:** Experiencing connectivity issues with full AI processing\n`;
-          basicAnalysis += `\n**💡 Recommendations:**\n`;
-          
-          if (hints?.analysisType === 'summary') {
-            basicAnalysis += `• Ask for analysis of specific sections\n`;
-            basicAnalysis += `• Request summary of particular topics\n`;
-            basicAnalysis += `• Break down into smaller questions\n`;
-          } else {
-            basicAnalysis += `• Focus on specific aspects of the document\n`;
-            basicAnalysis += `• Ask about particular data points\n`;
-            basicAnalysis += `• Request analysis of specific sections\n`;
-          }
-          
-          basicAnalysis += `• Try again in a few moments for full AI processing\n`;
-          
+          // For document requests, return a progress/fallback message
           return NextResponse.json({
-            response: basicAnalysis,
-            tokenUsage: { total_tokens: 75, prompt_tokens: 35, completion_tokens: 40 },
+            response: `📄 Your document is being processed but the AI service is taking longer than expected. Please try again in a few moments, or ask for a summary of a specific section to get a faster response.`,
+            tokenUsage: { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 },
             fallback: true,
-            partialAnalysis: true,
-            processingHints: hints,
-            suggestions: [
-              `Analyze specific sections of ${fileName}`,
-              `Request details about particular topics`,
-              `Ask questions about the document structure`,
-              `Try again for full AI processing`
-            ]
+            error: "Service temporarily slow or unavailable"
           });
         }
-        
         let fallbackMessage;
-        if (isComplexRequest) {
+        if (requestTimeout > BASE_TIMEOUT_MS) {
           fallbackMessage = "I'm experiencing connectivity issues while processing your complex request. The AI service may be temporarily unavailable. Please try with a simpler question or wait a moment and try again.";
         } else {
           fallbackMessage = "I'm currently experiencing connectivity issues with my AI service. The endpoints may be temporarily unavailable. Please try again in a few moments, or contact support if this persists.";
         }
-        
         return NextResponse.json({
           response: fallbackMessage,
           tokenUsage: { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 },
@@ -870,7 +814,6 @@ export async function POST(request) {
           error: "Service temporarily unavailable"
         });
       }
-      
       errorMessage = `Could not connect to AI service. The service might be down or unreachable. Tried ${endpointStats.length} endpoints.`;
       statusCode = 503; // Service Unavailable
     } else if (error.response?.status === 401) {
@@ -882,7 +825,6 @@ export async function POST(request) {
     } else if (error.response?.data?.error) {
       errorMessage = `AI service error: ${error.response.data.error.message || 'Unknown error'}`;
     }
-
     return NextResponse.json(
       { 
         error: errorMessage, 
