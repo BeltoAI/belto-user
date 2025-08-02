@@ -23,12 +23,48 @@ const endpointStats = endpoints.map(url => ({
   lastCircuitBreakerCheck: Date.now()
 }));
 
-const TIMEOUT_MS = 8000; // Reduced to 8 seconds for faster failure detection
+const BASE_TIMEOUT_MS = 8000; // Base timeout for simple requests
+const ATTACHMENT_TIMEOUT_MS = 25000; // Extended timeout for requests with attachments or complex content
 const MAX_CONSECUTIVE_FAILURES = 1; // Reduce failures before marking endpoint as unavailable
 const RETRY_INTERVAL_MS = 20000; // Try unavailable endpoints again after 20 seconds
 const HEALTH_CHECK_THRESHOLD = 120000; // 2 minutes in ms
 const CIRCUIT_BREAKER_THRESHOLD = 2; // Number of failures to open circuit breaker
 const CIRCUIT_BREAKER_TIMEOUT = 30000; // 30 second timeout for circuit breaker
+
+/**
+ * Determines appropriate timeout based on request complexity
+ * @param {Object} body - Request body
+ * @param {Array} messages - Formatted messages array
+ * @returns {number} Timeout in milliseconds
+ */
+function getTimeoutForRequest(body, messages) {
+  // Check for attachments or large content
+  const hasAttachments = body.attachments && body.attachments.length > 0;
+  const hasLargeContent = messages.some(msg => msg.content && msg.content.length > 1000);
+  const totalContentLength = messages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
+  
+  // Use extended timeout for:
+  // - Requests with attachments (PDFs, documents)
+  // - Messages with large content (>1000 chars in any message)
+  // - Total content length > 2000 characters
+  // - Complex programming requests (detect code keywords)
+  const hasCodeKeywords = messages.some(msg => 
+    msg.content && /\b(code|function|class|variable|algorithm|program|java|python|javascript|html|css)\b/i.test(msg.content)
+  );
+  
+  if (hasAttachments || hasLargeContent || totalContentLength > 2000 || hasCodeKeywords) {
+    console.log(`Using extended timeout (${ATTACHMENT_TIMEOUT_MS}ms) for complex request:`, {
+      hasAttachments,
+      hasLargeContent,
+      totalContentLength,
+      hasCodeKeywords
+    });
+    return ATTACHMENT_TIMEOUT_MS;
+  }
+  
+  console.log(`Using base timeout (${BASE_TIMEOUT_MS}ms) for simple request`);
+  return BASE_TIMEOUT_MS;
+}
 
 /**
  * Selects the best endpoint based on availability and response time
@@ -320,6 +356,9 @@ export async function POST(request) {
 
     console.log('Final message count being sent to AI:', validMessages.length);
 
+    // Determine appropriate timeout based on request complexity
+    const requestTimeout = getTimeoutForRequest(body, validMessages);
+
     // Prepare the request payload optimized for speed
     const aiRequestPayload = {
       model: body.aiConfig?.model || body.preferences?.model || 'default-model',
@@ -330,6 +369,7 @@ export async function POST(request) {
 
     console.log('Request payload structure:', Object.keys(aiRequestPayload));
     console.log('Message count:', aiRequestPayload.messages.length);
+    console.log('Using timeout:', requestTimeout + 'ms');
     
     // Improved retry logic for better reliability
     let lastError = null;
@@ -353,7 +393,7 @@ export async function POST(request) {
         // Add detailed logging for debugging
         console.log('Request details:', {
           endpoint: selectedEndpoint,
-          timeout: TIMEOUT_MS,
+          timeout: requestTimeout,
           payloadSize: JSON.stringify(aiRequestPayload).length,
           messageCount: aiRequestPayload.messages.length,
           attemptedEndpoints: Array.from(attemptedEndpoints)
@@ -371,7 +411,7 @@ export async function POST(request) {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${apiKey}`,
             },
-            timeout: TIMEOUT_MS,
+            timeout: requestTimeout,
             // Add additional debugging options
             validateStatus: function (status) {
               // Consider 2xx and some 4xx as valid for debugging
@@ -452,15 +492,28 @@ export async function POST(request) {
       console.error('Connection error details:', {
         code: error.code,
         endpoint: error.config?.url,
-        timeout: TIMEOUT_MS,
+        timeout: requestTimeout,
         availableEndpoints: endpointStats.filter(e => e.isAvailable).length,
         totalEndpoints: endpointStats.length
       });
       
       // If fallback is enabled and all endpoints failed, provide a helpful response
       if (ENABLE_FALLBACK_RESPONSES) {
+        // Determine if this was a complex request for better error messaging
+        const hasAttachments = body.attachments && body.attachments.length > 0;
+        const isComplexRequest = requestTimeout > BASE_TIMEOUT_MS;
+        
+        let fallbackMessage;
+        if (hasAttachments) {
+          fallbackMessage = "I'm having trouble processing your document attachment right now. The AI service is experiencing connectivity issues. Please try uploading a smaller document or try again in a few moments.";
+        } else if (isComplexRequest) {
+          fallbackMessage = "I'm experiencing connectivity issues while processing your complex request. The AI service may be temporarily unavailable. Please try with a simpler question or wait a moment and try again.";
+        } else {
+          fallbackMessage = "I'm currently experiencing connectivity issues with my AI service. The endpoints may be temporarily unavailable. Please try again in a few moments, or contact support if this persists.";
+        }
+        
         return NextResponse.json({
-          response: "I'm currently experiencing connectivity issues with my AI service. The endpoints may be temporarily unavailable. Please try again in a few moments, or contact support if this persists.",
+          response: fallbackMessage,
           tokenUsage: { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 },
           fallback: true,
           error: "Service temporarily unavailable"

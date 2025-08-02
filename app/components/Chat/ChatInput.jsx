@@ -400,7 +400,7 @@ const ChatInput = ({
                 limitType === 'token' ?
                   `Token limit reached (${tokenLimit} tokens)` : 
                   `Message limit reached (${messageLimit} messages)` 
-                : isGenerating ? "AI is thinking..." : "Type your message..."
+                : isGenerating ? "Belto is thinking..." : "Type your message..."
             } 
             className={`w-full bg-transparent border-none focus:outline-none text-white ${
               limitReached ? 'opacity-50 cursor-not-allowed' : ''
@@ -424,7 +424,7 @@ const ChatInput = ({
               'hover:bg-[#262626] bg-[#1A1A1A] border border-[#FFB800]/30 hover:border-[#FFB800]/60'
           }`} 
           disabled={isGenerating || !currentInput.trim() || limitReached}
-          title={isGenerating ? "AI is processing..." : "Send message"}
+          title={isGenerating ? "Belto is processing..." : "Send message"}
         >
           {isGenerating ? (
             <div className="w-6 h-6 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin"></div>

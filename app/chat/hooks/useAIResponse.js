@@ -183,9 +183,18 @@ export const useAIResponse = () => {
       // Provide more helpful fallback responses based on error type
       let fallbackResponse;
       if (errorMessage.includes('Could not connect to AI service') || errorMessage.includes('503')) {
-        fallbackResponse = "🔧 I'm experiencing connectivity issues with the AI service. The system is working to restore connection. Please try again in a moment.";
+        // Check if this was a request with attachments
+        if (attachments && attachments.length > 0) {
+          fallbackResponse = "📄 I'm having trouble processing your document right now. The AI service is experiencing connectivity issues. Please try uploading a smaller file or try again in a moment.";
+        } else {
+          fallbackResponse = "🔧 I'm experiencing connectivity issues with the AI service. The system is working to restore connection. Please try again in a moment.";
+        }
       } else if (errorMessage.includes('timeout') || errorMessage.includes('ECONNABORTED')) {
-        fallbackResponse = "⏱️ The AI service is taking longer than expected. Please try again with a shorter message or wait a moment.";
+        if (attachments && attachments.length > 0) {
+          fallbackResponse = "⏱️ Your document is taking longer than expected to process. Please try with a smaller file or wait a moment before trying again.";
+        } else {
+          fallbackResponse = "⏱️ The AI service is taking longer than expected. Please try again with a shorter message or wait a moment.";
+        }
       } else if (errorMessage.includes('500')) {
         fallbackResponse = "🔧 The AI service encountered an internal error. Please try again in a moment.";
       } else if (errorMessage.includes('429')) {

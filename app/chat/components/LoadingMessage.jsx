@@ -1,6 +1,6 @@
 import Image from 'next/image';
 
-export const LoadingMessage = ({ message = "Generating response..." }) => (
+export const LoadingMessage = ({ message = "Belto is thinking..." }) => (
   <div className="flex items-start space-x-3 p-4 bg-[#141414] rounded-lg mb-4 border border-[#FFB800]/20">
     <Image 
       src="/logo.png"
@@ -20,7 +20,7 @@ export const LoadingMessage = ({ message = "Generating response..." }) => (
         <span className="text-sm text-gray-300 animate-pulse">{message}</span>
       </div>
       <div className="text-xs text-gray-500 mt-1">
-        Processing your request using AI...
+        Processing your request...
       </div>
     </div>
   </div>
