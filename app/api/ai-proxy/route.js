@@ -2,18 +2,19 @@ import { NextResponse } from 'next/server';
 import axios from 'axios';
 
 const endpoints = [
-  'http://belto.myftp.biz:9999/v1/chat/completions', // Move working endpoint first
-  'http://47.34.185.47:9999/v1/chat/completions'
+  { url: 'http://belto.myftp.biz:9999/v1/chat/completions', priority: 1 }, // Highest priority
+  { url: 'http://47.34.185.47:9999/v1/chat/completions', priority: 2 }
 ];
 
 // Add a flag to enable fallback responses when all endpoints fail
 const ENABLE_FALLBACK_RESPONSES = true;
+const STREAM_RESPONSE = true; // Enable/disable streaming
 
 // 'http://97.90.195.162:9999/v1/chat/completions',
 
 // Endpoint health tracking with circuit breaker pattern
-const endpointStats = endpoints.map(url => ({
-  url,
+const endpointStats = endpoints.map(e => ({
+  ...e,
   isAvailable: true,
   failCount: 0,
   lastResponseTime: 0,
@@ -149,8 +150,9 @@ function selectEndpoint() {
   );
   
   if (availableEndpoints.length === 0) {
-    // All endpoints are unavailable or circuit breaker is open, reset the first one for retry
-    console.log('All endpoints unavailable or circuit breaker open, resetting the first one for retry');
+    // All endpoints are unavailable or circuit breaker is open, reset the highest priority one for retry
+    console.log('All endpoints unavailable or circuit breaker open, resetting the highest priority one for retry');
+    endpointStats.sort((a, b) => a.priority - b.priority);
     endpointStats[0].isAvailable = true;
     endpointStats[0].failCount = 0;
     endpointStats[0].consecutiveFailures = 0;
@@ -158,21 +160,25 @@ function selectEndpoint() {
     return endpointStats[0].url;
   }
   
-  // Choose the fastest available endpoint with the least recent activity
+  // Choose the best available endpoint
   availableEndpoints.sort((a, b) => {
-    // First prioritize by availability and circuit breaker status
+    // 1. Prioritize by specified priority
+    if (a.priority !== b.priority) {
+      return a.priority - b.priority;
+    }
+    // 2. Prioritize by circuit breaker status
     if (a.circuitBreakerOpen !== b.circuitBreakerOpen) {
       return a.circuitBreakerOpen ? 1 : -1;
     }
-    // Then by consecutive failures (prefer lower failures)
+    // 3. Prioritize by consecutive failures (lower is better)
     if (a.consecutiveFailures !== b.consecutiveFailures) {
       return a.consecutiveFailures - b.consecutiveFailures;
     }
-    // Then prioritize endpoints with faster response times (but only if they've been tested)
+    // 4. Prioritize by response time (faster is better)
     if (a.lastResponseTime > 0 && b.lastResponseTime > 0) {
       return a.lastResponseTime - b.lastResponseTime;
     }
-    // Finally, if response times are equal or untested, prioritize by least total failures
+    // 5. Prioritize by total failures (lower is better)
     return a.failCount - b.failCount;
   });
   
@@ -525,7 +531,8 @@ export async function POST(request) {
       model: body.aiConfig?.model || body.preferences?.model || 'default-model',
       messages: optimizedMessages,
       temperature: body.aiConfig?.temperature || body.preferences?.temperature || 0.7,
-      max_tokens: Math.min(body.aiConfig?.maxTokens || body.preferences?.maxTokens || 300, 300), // Cap at 300 for speed
+      max_tokens: Math.min(body.aiConfig?.maxTokens || body.preferences?.maxTokens || 400, 400), // Cap at 400 for speed
+      stream: STREAM_RESPONSE // Enable streaming
     };
 
     console.log('Request payload structure:', Object.keys(aiRequestPayload));
@@ -543,7 +550,7 @@ export async function POST(request) {
         const selectedEndpoint = selectEndpoint();
         
         // If we've already tried this endpoint and it's the only one, skip further attempts
-        if (attemptedEndpoints.has(selectedEndpoint) && attemptedEndpoints.size >= endpoints.length) {
+        if (attemptedEndpoints.has(selectedEndpoint) && attemptedEndpoints.size >= endpointStats.length) {
           console.log(`All endpoints tried and failed, skipping attempt ${attempt}`);
           break;
         }
@@ -571,8 +578,10 @@ export async function POST(request) {
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${apiKey}`,
+              'Accept': 'text/event-stream' // Accept streaming responses
             },
             timeout: requestTimeout,
+            responseType: 'stream', // Tell axios to handle the response as a stream
             // Add additional debugging options
             validateStatus: function (status) {
               // Consider 2xx and some 4xx as valid for debugging
@@ -589,14 +598,27 @@ export async function POST(request) {
 
         // Handle successful response
         if (response.status === 200) {
-          return NextResponse.json({
-            response: response.data.choices?.[0]?.message?.content || 'No response content',
-            tokenUsage: response.data.usage || {
-              total_tokens: 0,
-              prompt_tokens: 0,
-              completion_tokens: 0
-            }
-          });
+          if (STREAM_RESPONSE) {
+            // For streaming responses, we pipe the stream back to the client
+            const stream = response.data;
+            return new NextResponse(stream, {
+              headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+              },
+            });
+          } else {
+            // For non-streaming responses
+            return NextResponse.json({
+              response: response.data.choices?.[0]?.message?.content || 'No response content',
+              tokenUsage: response.data.usage || {
+                total_tokens: 0,
+                prompt_tokens: 0,
+                completion_tokens: 0
+              }
+            });
+          }
         } else {
           // Non-200 but non-500 status codes should be treated as errors
           throw new Error(`HTTP ${response.status}: ${response.data?.error?.message || 'Unknown error'}`);
@@ -618,7 +640,7 @@ export async function POST(request) {
         });
 
         // If this is not the last attempt, wait before retrying
-        if (attempt < maxRetries && attemptedEndpoints.size < endpoints.length) {
+        if (attempt < maxRetries && attemptedEndpoints.size < endpointStats.length) {
           const waitTime = Math.min(attempt * 500, 1500); // Progressive delay: 500ms, 1000ms, 1500ms max
           console.log(`Waiting ${waitTime}ms before retry...`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
