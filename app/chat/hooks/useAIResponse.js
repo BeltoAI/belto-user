@@ -69,14 +69,30 @@ export const useAIResponse = () => {
 
       // Prepare the request body with AI preferences if available
       const requestBody = {
-        // If prompt has attachments, explicitly include them in the main content
+        // Optimize prompt construction for attachments
         prompt: attachments && attachments.length > 0 
-          ? `${prompt}\n\nAttached document content:\n${attachments[0].content}`
+          ? `${prompt}\n\nDocument Analysis Request: Please analyze the attached document content.`
           : prompt,
-        attachments, // Still include the original attachments for reference
+        attachments, // Include the original attachments for reference
         history: formattedHistory,
         messageCount
       };
+      
+      // For document attachments, add helpful context
+      if (attachments && attachments.length > 0) {
+        const attachment = attachments[0];
+        const contentLength = attachment.content?.length || 0;
+        
+        // Add processing hints for the AI
+        requestBody.processingHints = {
+          documentType: attachment.name?.split('.').pop() || 'unknown',
+          contentLength: contentLength,
+          analysisType: prompt.toLowerCase().includes('summarize') ? 'summary' : 'analysis',
+          requestType: 'document_processing'
+        };
+        
+        console.log("📄 Document processing hints:", requestBody.processingHints);
+      }
 
       // If we have AI preferences, add them to the request
       if (aiPreferences) {
@@ -119,6 +135,18 @@ export const useAIResponse = () => {
             // Check if this is a fallback response
             if (data.fallback) {
               console.log('✅ Received fallback response from AI proxy');
+              
+              // If it's a partial analysis, enhance it with additional suggestions
+              if (data.partialAnalysis) {
+                return {
+                  response: data.response,
+                  tokenUsage: data.tokenUsage,
+                  fallback: true,
+                  partialAnalysis: true,
+                  suggestions: data.suggestions || []
+                };
+              }
+              
               return {
                 response: data.response,
                 tokenUsage: data.tokenUsage,
@@ -192,14 +220,54 @@ export const useAIResponse = () => {
       
       // Provide more helpful fallback responses based on error type
       let fallbackResponse;
+      
+      // Generate a basic document analysis if we have attachment content
+      if (attachments && attachments.length > 0 && attachments[0].content) {
+        const content = attachments[0].content;
+        const fileName = attachments[0].name || 'document';
+        
+        // Try to provide some value even when the main service fails
+        const wordCount = content.split(/\s+/).length;
+        const hasHeadings = /^#+\s|\n#+\s|heading|title|chapter|section/i.test(content);
+        const firstSentences = content.substring(0, 300).split('.').slice(0, 2).join('.') + '.';
+        
+        let basicResponse = `📄 I can see your document "${fileName}" (approximately ${wordCount} words). `;
+        
+        if (hasHeadings) {
+          basicResponse += "It appears to be a structured document with sections. ";
+        }
+        
+        if (firstSentences.length > 10) {
+          basicResponse += `\n\nDocument opening: "${firstSentences}" `;
+        }
+        
+        basicResponse += `\n\nWhile I'm having connectivity issues with the full AI processing service, here's what I can tell you about your document. For a more detailed analysis, please try:`;
+        basicResponse += `\n• Asking specific questions about particular sections`;
+        basicResponse += `\n• Requesting analysis of specific topics`;
+        basicResponse += `\n• Breaking down your request into smaller parts`;
+        basicResponse += `\n• Trying again in a few moments`;
+        
+        return {
+          response: basicResponse,
+          tokenUsage: {
+            total_tokens: 50,
+            prompt_tokens: 25,
+            completion_tokens: 25
+          },
+          partialAnalysis: true,
+          error: false // Not really an error, just limited functionality
+        };
+      }
+      
+      // Standard error responses for non-document requests
       if (errorMessage.includes('Could not connect to AI service') || errorMessage.includes('503')) {
         // Check if this was a request with attachments
         if (attachments && attachments.length > 0) {
           const fileSize = attachments[0].content?.length || 0;
           if (fileSize > 10000) {
-            fallbackResponse = "📄 Your document is quite large and I'm having trouble processing it right now. The AI service is experiencing connectivity issues. Please try breaking your question into smaller parts or try again in a moment.";
+            fallbackResponse = "📄 Your document is quite large and I'm having trouble processing it right now. Please try asking specific questions about the document instead of requesting a full analysis, or try again in a moment.";
           } else {
-            fallbackResponse = "📄 I'm having trouble processing your document right now. The AI service is experiencing connectivity issues. Please try uploading a smaller file or try again in a moment.";
+            fallbackResponse = "📄 I'm having trouble processing your document right now. Please try asking specific questions about the content or try again in a moment.";
           }
         } else {
           fallbackResponse = "🔧 I'm experiencing connectivity issues with the AI service. The system is working to restore connection. Please try again in a moment.";
@@ -210,7 +278,7 @@ export const useAIResponse = () => {
           if (fileSize > 15000) {
             fallbackResponse = "⏱️ Your document is very large and taking longer than expected to process. Please try asking specific questions about the document instead of requesting a full summary, or upload a smaller document.";
           } else {
-            fallbackResponse = "⏱️ Your document is taking longer than expected to process. Please try with a smaller file or wait a moment before trying again.";
+            fallbackResponse = "⏱️ Your document is taking longer than expected to process. Please try with specific questions about the content or wait a moment before trying again.";
           }
         } else {
           fallbackResponse = "⏱️ The AI service is taking longer than expected. Please try again with a shorter message or wait a moment.";

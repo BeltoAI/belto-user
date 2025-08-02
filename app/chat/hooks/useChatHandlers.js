@@ -140,13 +140,28 @@ export const useChatHandlers = (
       let promptToSend = text.trim();
       let attachmentsToSend = attachment ? [attachment] : [];
       
-      // If there's an uploaded attachment, use that
+      // If there's an uploaded attachment, use optimized processing
       if (attachment) {
-        promptToSend = `${text.trim()}\n\nHere is the document content to analyze:\n${attachment.content}`;
+        // Don't concatenate the entire content - let the AI proxy handle it intelligently
+        const contentLength = attachment.content?.length || 0;
+        console.log(`📄 Processing attachment: ${attachment.name} (${contentLength} characters)`);
+        
+        if (contentLength > 20000) {
+          promptToSend = `${text.trim()}\n\n[Large document attached: ${attachment.name} - ${Math.floor(contentLength/1000)}KB. Processing with intelligent content optimization.]`;
+        } else {
+          promptToSend = `${text.trim()}\n\n[Document attached: ${attachment.name} for analysis]`;
+        }
       } 
       // If user is asking about a lecture document and no attachment was uploaded
       else if (documentMentioned) {
-        promptToSend = `${text.trim()}\n\nHere is the document content to analyze:\n${documentMentioned.content}`;
+        const contentLength = documentMentioned.content?.length || 0;
+        console.log(`📚 Processing lecture document: ${documentMentioned.title} (${contentLength} characters)`);
+        
+        if (contentLength > 20000) {
+          promptToSend = `${text.trim()}\n\n[Large lecture document referenced: ${documentMentioned.title} - ${Math.floor(contentLength/1000)}KB. Processing with intelligent content optimization.]`;
+        } else {
+          promptToSend = `${text.trim()}\n\n[Lecture document referenced: ${documentMentioned.title}]`;
+        }
         
         // Create a virtual attachment from lecture material
         attachmentsToSend = [{

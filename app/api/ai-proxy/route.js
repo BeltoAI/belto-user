@@ -309,10 +309,24 @@ export async function POST(request) {
    
     // Add the current prompt/message if it's not already in the history
     if (body.prompt) {
-      const newUserMessage = { role: 'user', content: body.prompt };
+      // For prompts with attachments, create optimized content
+      let messageContent = body.prompt;
+      
+      if (body.attachments && body.attachments.length > 0) {
+        const attachment = body.attachments[0];
+        const contentLength = attachment.content?.length || 0;
+        
+        if (contentLength > 10000) {
+          // For large documents, don't duplicate content in the prompt
+          messageContent = body.prompt.replace(/\n\nAttached document content:\n.*$/s, '') + 
+            `\n\n--- DOCUMENT ANALYSIS REQUEST ---\nDocument: ${attachment.name || 'Uploaded Document'}\nSize: ${Math.floor(contentLength/1000)}KB\n\nPlease analyze the attached document content and respond to the user's request.`;
+        }
+      }
+      
+      const newUserMessage = { role: 'user', content: messageContent };
       const isDuplicate = messages.some(existingMsg =>
         existingMsg.role === 'user' &&
-        existingMsg.content === body.prompt
+        existingMsg.content.includes(body.prompt.split('\n')[0]) // Check first line to avoid duplicates
       );
       if (!isDuplicate) {
         messages.push(newUserMessage);
@@ -340,12 +354,36 @@ export async function POST(request) {
     if (body.attachments && body.attachments.length > 0) {
       for (let attachment of body.attachments) {
         if (attachment.content && attachment.content.length > 15000) {
-          console.log(`Large attachment detected (${attachment.content.length} chars), chunking content...`);
-          // Take first 10000 characters and last 5000 characters for context
-          const firstPart = attachment.content.substring(0, 10000);
-          const lastPart = attachment.content.substring(attachment.content.length - 5000);
-          attachment.content = `${firstPart}\n\n[... content truncated for processing efficiency ...]\n\n${lastPart}`;
-          console.log(`Attachment content reduced to ${attachment.content.length} characters`);
+          console.log(`Large attachment detected (${attachment.content.length} chars), applying smart chunking...`);
+          
+          // For very large documents, create a more intelligent summary
+          const content = attachment.content;
+          const contentLength = content.length;
+          
+          if (contentLength > 50000) {
+            // For extremely large documents, take key sections
+            const beginning = content.substring(0, 8000);
+            const middle = content.substring(Math.floor(contentLength * 0.4), Math.floor(contentLength * 0.4) + 4000);
+            const ending = content.substring(contentLength - 8000);
+            attachment.content = `${beginning}\n\n[... Document summary: This is a ${Math.floor(contentLength/1000)}KB document. Key sections included for analysis ...]\n\n${middle}\n\n[... continuing to end section ...]\n\n${ending}`;
+          } else {
+            // For large documents, take larger chunks
+            const firstPart = content.substring(0, 12000);
+            const lastPart = content.substring(content.length - 8000);
+            attachment.content = `${firstPart}\n\n[... content continues - document processing optimized for analysis ...]\n\n${lastPart}`;
+          }
+          
+          console.log(`Attachment content optimized: ${contentLength} → ${attachment.content.length} characters`);
+        }
+        
+        // For all attachments with content, add it as a separate system message for better processing
+        if (attachment.content) {
+          const contentMessage = {
+            role: 'system',
+            content: `Document Content for Analysis (${attachment.name || 'Document'}):\n\n${attachment.content}`
+          };
+          messages.push(contentMessage);
+          console.log(`Added document content as separate message: ${attachment.content.length} characters`);
         }
       }
     }
@@ -549,10 +587,59 @@ export async function POST(request) {
         const hasAttachments = body.attachments && body.attachments.length > 0;
         const isComplexRequest = requestTimeout > BASE_TIMEOUT_MS;
         
+        // For document attachments, try to provide a basic analysis instead of complete failure
+        if (hasAttachments && body.attachments[0].content) {
+          const content = body.attachments[0].content;
+          const fileName = body.attachments[0].name || 'document';
+          
+          // Generate a basic response about the document structure
+          let basicAnalysis = `I can see you've uploaded a document (${fileName}). `;
+          
+          // Analyze document structure
+          const wordCount = content.split(/\s+/).length;
+          const hasHeadings = /^#+\s|\n#+\s|heading|title|chapter|section/i.test(content);
+          const hasNumbers = /\b\d+(\.\d+)?\b/.test(content);
+          const hasCode = /```|function|class|var|let|const|public|private/.test(content);
+          
+          if (wordCount > 0) {
+            basicAnalysis += `The document contains approximately ${wordCount} words. `;
+          }
+          
+          if (hasHeadings) {
+            basicAnalysis += `It appears to be structured with headings or sections. `;
+          }
+          
+          if (hasCode) {
+            basicAnalysis += `I notice it contains code or technical content. `;
+          }
+          
+          if (hasNumbers) {
+            basicAnalysis += `The document includes numerical data. `;
+          }
+          
+          // Extract key phrases from the beginning
+          const firstParagraph = content.substring(0, 500).split('\n')[0];
+          if (firstParagraph && firstParagraph.length > 20) {
+            basicAnalysis += `\n\nFrom the opening content: "${firstParagraph.substring(0, 200)}..." `;
+          }
+          
+          basicAnalysis += `\n\nWhile I'm experiencing some connectivity issues with the full AI processing service, I can provide this basic analysis. For more detailed insights, please try asking specific questions about particular sections of the document, or try again in a few moments when the service stabilizes.`;
+          
+          return NextResponse.json({
+            response: basicAnalysis,
+            tokenUsage: { total_tokens: 50, prompt_tokens: 25, completion_tokens: 25 },
+            fallback: true,
+            partialAnalysis: true,
+            suggestions: [
+              "Ask about specific sections of the document",
+              "Request analysis of particular topics mentioned",
+              "Try breaking down your question into smaller parts"
+            ]
+          });
+        }
+        
         let fallbackMessage;
-        if (hasAttachments) {
-          fallbackMessage = "I'm having trouble processing your document attachment right now. The AI service is experiencing connectivity issues. Please try uploading a smaller document or try again in a few moments.";
-        } else if (isComplexRequest) {
+        if (isComplexRequest) {
           fallbackMessage = "I'm experiencing connectivity issues while processing your complex request. The AI service may be temporarily unavailable. Please try with a simpler question or wait a moment and try again.";
         } else {
           fallbackMessage = "I'm currently experiencing connectivity issues with my AI service. The endpoints may be temporarily unavailable. Please try again in a few moments, or contact support if this persists.";
