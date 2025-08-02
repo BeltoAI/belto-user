@@ -208,18 +208,32 @@ export const useChatHandlers = (
       if (aiResult.status === 'fulfilled') {
         aiResponse = aiResult.value.response;
         messageTokenUsage = aiResult.value.tokenUsage;
+        
+        // If this is a fallback response, inform the user subtly
+        if (aiResult.value.fallback) {
+          aiResponse += "\n\n*Note: Response generated using fallback system due to temporary service issues.*";
+        }
       } else {
         console.error('AI response generation failed:', aiResult.reason);
         
-        // Create a more user-friendly error message
+        // Create a more user-friendly error message based on error type
         let errorMsg = 'I apologize, but I encountered an error generating a response.';
-        if (aiResult.reason.message.includes('503')) {
-          errorMsg += ' The AI service is temporarily unavailable. Please try again in a moment.';
-        } else if (aiResult.reason.message.includes('timeout')) {
-          errorMsg += ' The request timed out. Please try again.';
+        const errorMessage = aiResult.reason.message || '';
+        
+        if (errorMessage.includes('503') || errorMessage.includes('Service Unavailable')) {
+          errorMsg = '🔧 The AI service is temporarily unavailable. Our team is working on it. Please try again in a moment.';
+        } else if (errorMessage.includes('timeout') || errorMessage.includes('ECONNABORTED')) {
+          errorMsg = '⏱️ The request timed out. The AI service might be experiencing high load. Please try again.';
+        } else if (errorMessage.includes('Could not connect')) {
+          errorMsg = '🌐 Unable to connect to the AI service. Please check your internet connection and try again.';
+        } else if (errorMessage.includes('401') || errorMessage.includes('unauthorized')) {
+          errorMsg = '🔑 Authentication error with the AI service. Please refresh the page or contact support if this persists.';
         } else {
-          errorMsg += ' Please try again.';
+          errorMsg = '❌ An unexpected error occurred while generating the response. Please try again.';
         }
+        
+        // Add a helpful suggestion
+        errorMsg += '\n\n💡 **Tip**: Try rephrasing your question or breaking it into smaller parts.';
         
         aiResponse = errorMsg;
         messageTokenUsage = { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };

@@ -87,13 +87,13 @@ export const useAIResponse = () => {
       console.log("Message count:", messageCount, "Limit:", aiPreferences?.numPrompts || "unspecified");
       console.log("Token usage:", totalTokensUsed, "Limit:", aiPreferences?.tokenPredictionLimit || "unspecified");
 
-      // Enhanced retry logic with fallback
+      // Enhanced retry logic with fallback for RAG system reliability
       let lastError = null;
-      let maxRetries = 2; // Restored to 2 for better reliability
+      let maxRetries = 2; // Optimized for speed and reliability
       
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          console.log(`AI request attempt ${attempt}...`);
+          console.log(`🤖 AI request attempt ${attempt}/${maxRetries}...`);
           
           const response = await fetch('/api/ai-proxy', {
             method: 'POST',
@@ -108,7 +108,7 @@ export const useAIResponse = () => {
             
             // Check if this is a fallback response
             if (data.fallback) {
-              console.log('Received fallback response from AI proxy');
+              console.log('✅ Received fallback response from AI proxy');
               return {
                 response: data.response,
                 tokenUsage: data.tokenUsage,
@@ -130,6 +130,7 @@ export const useAIResponse = () => {
               };
             }
             
+            console.log(`✅ AI response generated successfully on attempt ${attempt}`);
             return {
               response: data.response || 'I apologize, but I could not generate a response.',
               limitReached: data.limitReached || false,
@@ -146,12 +147,12 @@ export const useAIResponse = () => {
           lastError = new Error(errorData.error || `HTTP ${response.status}`);
           lastError.status = response.status;
           
-          console.error(`AI proxy error on attempt ${attempt}:`, response.status, errorData);
+          console.error(`❌ AI proxy error on attempt ${attempt}:`, response.status, errorData);
           
           // If this is not the last attempt and it's a potentially recoverable error, retry
           if (attempt < maxRetries && (response.status === 503 || response.status >= 500)) {
-            const waitTime = attempt * 1000; // Progressive delay: 1s, 2s
-            console.log(`Waiting ${waitTime}ms before retry...`);
+            const waitTime = attempt * 500; // Progressive delay: 500ms, 1000ms
+            console.log(`⏱️ Waiting ${waitTime}ms before retry...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
             continue;
           }
@@ -160,12 +161,12 @@ export const useAIResponse = () => {
           break;
         } catch (error) {
           lastError = error;
-          console.error(`Network error on attempt ${attempt}:`, error);
+          console.error(`❌ Network error on attempt ${attempt}:`, error);
           
           // If this is not the last attempt, wait before retrying
           if (attempt < maxRetries) {
-            const waitTime = attempt * 1000; // Progressive delay: 1s, 2s
-            console.log(`Waiting ${waitTime}ms before retry...`);
+            const waitTime = attempt * 500; // Progressive delay: 500ms, 1000ms
+            console.log(`⏱️ Waiting ${waitTime}ms before retry...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
           }
         }
@@ -174,21 +175,23 @@ export const useAIResponse = () => {
       // If we get here, all retries failed
       throw lastError || new Error('Failed to generate AI response');
     } catch (error) {
-      console.error('Error generating AI response:', error);
+      console.error('❌ Error generating AI response:', error);
       
       const errorMessage = error.message || "Failed to generate AI response";
       setError(errorMessage);
       
       // Provide more helpful fallback responses based on error type
       let fallbackResponse;
-      if (errorMessage.includes('Could not connect to AI service')) {
-        fallbackResponse = "I'm currently experiencing connectivity issues. Please try again in a moment, or check if the AI service is available.";
-      } else if (errorMessage.includes('timeout')) {
-        fallbackResponse = "The AI service is taking longer than expected to respond. Please try again with a shorter message.";
-      } else if (errorMessage.includes('503')) {
-        fallbackResponse = "The AI service is temporarily unavailable. Please try again in a few minutes.";
+      if (errorMessage.includes('Could not connect to AI service') || errorMessage.includes('503')) {
+        fallbackResponse = "🔧 I'm experiencing connectivity issues with the AI service. The system is working to restore connection. Please try again in a moment.";
+      } else if (errorMessage.includes('timeout') || errorMessage.includes('ECONNABORTED')) {
+        fallbackResponse = "⏱️ The AI service is taking longer than expected. Please try again with a shorter message or wait a moment.";
+      } else if (errorMessage.includes('500')) {
+        fallbackResponse = "🔧 The AI service encountered an internal error. Please try again in a moment.";
+      } else if (errorMessage.includes('429')) {
+        fallbackResponse = "🚦 The AI service is currently busy. Please wait a moment and try again.";
       } else {
-        fallbackResponse = `I apologize, but I'm having trouble generating a response right now. Error: ${errorMessage}. Please try again.`;
+        fallbackResponse = `⚠️ I'm having trouble generating a response right now. Please try again.`;
       }
       
       return {
@@ -197,7 +200,8 @@ export const useAIResponse = () => {
           total_tokens: 0,
           prompt_tokens: 0,
           completion_tokens: 0
-        }
+        },
+        error: true
       };
     } finally {
       setIsLoading(false);
@@ -210,8 +214,8 @@ export const useAIResponse = () => {
     
     try {
       // Log the parameters being used
-      console.log("Generating AI response with:", { 
-        message, 
+      console.log("🔍 Generating AI response with preferences:", { 
+        message: message.substring(0, 50) + '...', 
         sessionId, 
         lectureId,
         messageCount,
@@ -226,12 +230,12 @@ export const useAIResponse = () => {
       
       if (!preferencesResponse.ok) {
         const errorData = await preferencesResponse.json();
-        console.error("Failed to fetch AI preferences:", errorData);
+        console.error("❌ Failed to fetch AI preferences:", errorData);
         throw new Error(`Failed to fetch AI preferences: ${errorData.error || preferencesResponse.statusText}`);
       }
       
       const preferences = await preferencesResponse.json();
-      console.log("AI preferences fetched:", preferences);
+      console.log("✅ AI preferences fetched:", preferences);
       
       // Check message limits
       if (preferences.numPrompts && messageCount >= preferences.numPrompts) {
@@ -273,7 +277,7 @@ export const useAIResponse = () => {
       
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          console.log(`AI request attempt ${attempt} for lecture ${lectureId}...`);
+          console.log(`🤖 AI request attempt ${attempt}/${maxRetries} for lecture ${lectureId}...`);
           
           const aiResponse = await fetch('/api/ai-proxy', {
             method: 'POST',
@@ -293,6 +297,16 @@ export const useAIResponse = () => {
           if (aiResponse.ok) {
             const data = await aiResponse.json();
             
+            // Check if this is a fallback response
+            if (data.fallback) {
+              console.log('✅ Received fallback response from AI proxy');
+              return {
+                response: data.response,
+                tokenUsage: data.tokenUsage,
+                fallback: true
+              };
+            }
+            
             // Check if the new response would exceed the token limit
             if (preferences.tokenPredictionLimit && 
                 (totalTokensUsed + (data.tokenUsage?.total_tokens || 0)) > preferences.tokenPredictionLimit) {
@@ -307,6 +321,7 @@ export const useAIResponse = () => {
               };
             }
             
+            console.log(`✅ AI response generated successfully for lecture ${lectureId}`);
             return {
               response: data.response || 'I apologize, but I could not generate a response.',
               limitReached: data.limitReached || false,
@@ -324,12 +339,12 @@ export const useAIResponse = () => {
           lastError = new Error(errorData.error || `HTTP ${aiResponse.status}`);
           lastError.status = aiResponse.status;
           
-          console.error(`AI response generation failed on attempt ${attempt}:`, errorData);
+          console.error(`❌ AI response generation failed on attempt ${attempt}:`, errorData);
           
           // If this is not the last attempt and it's a potentially recoverable error, retry
           if (attempt < maxRetries && (aiResponse.status === 503 || aiResponse.status >= 500)) {
-            const waitTime = attempt * 1000; // Progressive delay: 1s, 2s
-            console.log(`Waiting ${waitTime}ms before retry...`);
+            const waitTime = attempt * 500; // Progressive delay: 500ms, 1000ms
+            console.log(`⏱️ Waiting ${waitTime}ms before retry...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
             continue;
           }
@@ -338,12 +353,12 @@ export const useAIResponse = () => {
           break;
         } catch (error) {
           lastError = error;
-          console.error(`Network error on attempt ${attempt}:`, error);
+          console.error(`❌ Network error on attempt ${attempt}:`, error);
           
           // If this is not the last attempt, wait before retrying
           if (attempt < maxRetries) {
-            const waitTime = attempt * 1000; // Progressive delay: 1s, 2s
-            console.log(`Waiting ${waitTime}ms before retry...`);
+            const waitTime = attempt * 500; // Progressive delay: 500ms, 1000ms
+            console.log(`⏱️ Waiting ${waitTime}ms before retry...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
           }
         }
@@ -352,7 +367,7 @@ export const useAIResponse = () => {
       // If we get here, all retries failed
       throw lastError || new Error('AI response generation failed after retries');
     } catch (error) {
-      console.error("Error in generateAIResponseWithPreferences:", error);
+      console.error("❌ Error in generateAIResponseWithPreferences:", error);
       setError(error.message || "Failed to generate AI response");
       throw error;
     } finally {

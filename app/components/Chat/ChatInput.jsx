@@ -389,31 +389,48 @@ const ChatInput = ({
         >
           <FileUp className="w-5 h-5 text-[#FFD700]" />
         </button>
-        <input 
-          type="text" 
-          value={currentInput} 
-          onChange={handleInputChange}
-          onPaste={handlePaste} // Add paste event handler
-          placeholder={
-            limitReached ? 
-              limitType === 'token' ?
-                `Token limit reached (${tokenLimit} tokens)` : 
-                `Message limit reached (${messageLimit} messages)` 
-              : "Type your message..."
-          } 
-          className={`flex-1 bg-transparent border-none focus:outline-none text-white ${
-            limitReached ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
-          disabled={isGenerating || limitReached} 
-        />
+        <div className="flex-1 relative">
+          <input 
+            type="text" 
+            value={currentInput} 
+            onChange={handleInputChange}
+            onPaste={handlePaste} // Add paste event handler
+            placeholder={
+              limitReached ? 
+                limitType === 'token' ?
+                  `Token limit reached (${tokenLimit} tokens)` : 
+                  `Message limit reached (${messageLimit} messages)` 
+                : isGenerating ? "AI is thinking..." : "Type your message..."
+            } 
+            className={`w-full bg-transparent border-none focus:outline-none text-white ${
+              limitReached ? 'opacity-50 cursor-not-allowed' : ''
+            } ${isGenerating ? 'pr-20' : ''}`}
+            disabled={isGenerating || limitReached} 
+          />
+          {isGenerating && (
+            <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center space-x-1">
+              <div className="w-1.5 h-1.5 bg-[#FFB800] rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
+              <div className="w-1.5 h-1.5 bg-[#FFB800] rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+              <div className="w-1.5 h-1.5 bg-[#FFB800] rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+              <span className="text-xs text-[#FFB800] ml-2">Processing</span>
+            </div>
+          )}
+        </div>
         <button 
           type="submit" 
-          className={`p-2 hover:bg-[#262626] rounded-md transition-colors ${
-            isGenerating || !currentInput.trim() || limitReached ? 'opacity-50 cursor-not-allowed' : ''
+          className={`p-2 rounded-md transition-colors ${
+            isGenerating || !currentInput.trim() || limitReached ? 
+              'opacity-50 cursor-not-allowed bg-[#262626]' : 
+              'hover:bg-[#262626] bg-[#1A1A1A] border border-[#FFB800]/30 hover:border-[#FFB800]/60'
           }`} 
           disabled={isGenerating || !currentInput.trim() || limitReached}
+          title={isGenerating ? "AI is processing..." : "Send message"}
         >
-          <SquareArrowUp className="w-6 h-6 text-[#FFD700]" />
+          {isGenerating ? (
+            <div className="w-6 h-6 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin"></div>
+          ) : (
+            <SquareArrowUp className="w-6 h-6 text-[#FFD700]" />
+          )}
         </button>
       </div>
     </form>
