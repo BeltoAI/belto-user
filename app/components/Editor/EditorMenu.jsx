@@ -204,7 +204,21 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
             editorContainer.style.setProperty('width', '100vw', 'important');
             editorContainer.style.setProperty('height', '100vh', 'important');
             editorContainer.style.setProperty('z-index', '9999', 'important');
-            editorContainer.style.setProperty('background-color', '#1a1a1a', 'important');
+            editorContainer.style.setProperty('background-color', 'white', 'important');
+            editorContainer.style.setProperty('margin', '0', 'important');
+            editorContainer.style.setProperty('padding', '0', 'important');
+            editorContainer.style.setProperty('overflow', 'hidden', 'important');
+            
+            // Also style the workplace container
+            const workplace = editorContainer.querySelector('.jodit-workplace');
+            if (workplace) {
+              workplace.style.setProperty('height', '100vh', 'important');
+              workplace.style.setProperty('background-color', 'white', 'important');
+              workplace.style.setProperty('margin', '0', 'important');
+              workplace.style.setProperty('padding', '0', 'important');
+              workplace.style.setProperty('display', 'flex', 'important');
+              workplace.style.setProperty('flex-direction', 'column', 'important');
+            }
             
             // Find and style the editor content area
             const editorArea = editorContainer.querySelector('.jodit-wysiwyg') || 
@@ -225,14 +239,19 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
                 statusbarHeight = statusbar.offsetHeight;
               }
               
-              // Set editor area styles with high priority
-              editorArea.style.setProperty('height', `calc(100vh - ${toolbarHeight + statusbarHeight + 20}px)`, 'important');
+              // Set editor area styles with high priority - fill remaining space
+              editorArea.style.setProperty('height', `calc(100vh - ${toolbarHeight + statusbarHeight}px)`, 'important');
+              editorArea.style.setProperty('min-height', `calc(100vh - ${toolbarHeight + statusbarHeight}px)`, 'important');
+              editorArea.style.setProperty('max-height', `calc(100vh - ${toolbarHeight + statusbarHeight}px)`, 'important');
               editorArea.style.setProperty('background-color', 'white', 'important');
               editorArea.style.setProperty('color', 'black', 'important');
               editorArea.style.setProperty('overflow', 'auto', 'important');
               editorArea.style.setProperty('display', 'block', 'important');
               editorArea.style.setProperty('visibility', 'visible', 'important');
               editorArea.style.setProperty('opacity', '1', 'important');
+              editorArea.style.setProperty('margin', '0', 'important');
+              editorArea.style.setProperty('padding', '10px', 'important');
+              editorArea.style.setProperty('box-sizing', 'border-box', 'important');
               
               console.log('Editor area styled for fullscreen');
             }
@@ -299,15 +318,21 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
               const editorArea = editorContainer.querySelector('.jodit-wysiwyg, .jodit-source, [contenteditable="true"]');
               const toolbar = editorContainer.querySelector('.jodit-toolbar');
               const statusbar = editorContainer.querySelector('.jodit-statusbar');
+              const workplace = editorContainer.querySelector('.jodit-workplace');
               
               if (editorArea) {
                 editorArea.style.height = '';
+                editorArea.style.minHeight = '';
+                editorArea.style.maxHeight = '';
                 editorArea.style.backgroundColor = '';
                 editorArea.style.color = '';
                 editorArea.style.overflow = '';
                 editorArea.style.display = '';
                 editorArea.style.visibility = '';
                 editorArea.style.opacity = '';
+                editorArea.style.margin = '';
+                editorArea.style.padding = '';
+                editorArea.style.boxSizing = '';
               }
               
               if (toolbar) {
@@ -320,6 +345,16 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
               if (statusbar) {
                 statusbar.style.display = '';
                 statusbar.style.visibility = '';
+                statusbar.style.backgroundColor = '';
+              }
+              
+              if (workplace) {
+                workplace.style.height = '';
+                workplace.style.backgroundColor = '';
+                workplace.style.margin = '';
+                workplace.style.padding = '';
+                workplace.style.display = '';
+                workplace.style.flexDirection = '';
               }
               
               exitBtn.remove();

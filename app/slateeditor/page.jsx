@@ -905,6 +905,10 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
                   visibility: visible !important;
                   opacity: 1 !important;
                   overflow: auto !important;
+                  margin: 0 !important;
+                  padding: 10px !important;
+                  box-sizing: border-box !important;
+                  flex: 1 !important;
                 }
 
                 .custom-fullscreen .jodit-source {
@@ -914,6 +918,10 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
                   visibility: visible !important;
                   opacity: 1 !important;
                   overflow: auto !important;
+                  margin: 0 !important;
+                  padding: 10px !important;
+                  box-sizing: border-box !important;
+                  flex: 1 !important;
                 }
 
                 .custom-fullscreen .jodit-toolbar {
@@ -921,11 +929,14 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
                   border-bottom: 1px solid #444 !important;
                   display: flex !important;
                   visibility: visible !important;
+                  flex-shrink: 0 !important;
                 }
 
                 .custom-fullscreen .jodit-statusbar {
                   display: block !important;
                   visibility: visible !important;
+                  flex-shrink: 0 !important;
+                  background-color: #2a2a2a !important;
                 }
 
                 .custom-fullscreen [contenteditable="true"] {
@@ -994,6 +1005,39 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
                   display: flex !important;
                   flex-direction: column !important;
                   height: 100% !important;
+                  background-color: white !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
+
+                /* Remove any gaps or spacing in fullscreen */
+                .custom-fullscreen .jodit-workplace > * {
+                  margin: 0 !important;
+                }
+
+                /* Ensure the main container fills completely */
+                .custom-fullscreen {
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
+
+                /* Remove any bottom margins or padding that might cause black space */
+                .custom-fullscreen .jodit-container,
+                .custom-fullscreen .jodit-workplace,
+                .custom-fullscreen .jodit-wysiwyg,
+                .custom-fullscreen .jodit-source {
+                  border: none !important;
+                  outline: none !important;
+                }
+
+                /* Hide any scrollbars on the main container in fullscreen */
+                .custom-fullscreen::-webkit-scrollbar {
+                  display: none !important;
+                }
+
+                .custom-fullscreen {
+                  -ms-overflow-style: none !important;
+                  scrollbar-width: none !important;
                 }
               `}
             </style>
