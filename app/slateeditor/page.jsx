@@ -75,6 +75,7 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
   const [showCollaboration, setShowCollaboration] = useState(false);
   const [showCollaborationsList, setShowCollaborationsList] = useState(false);
   const [isEditorReady, setIsEditorReady] = useState(false);
+  const [editorInstance, setEditorInstance] = useState(null);
   const [showEditorSidebar, setShowEditorSidebar] = useState(false);
   const { editorContent, setEditorContent, addVersion } = useEditorStore();
   const [eventSource, setEventSource] = useState(null);
@@ -93,15 +94,17 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
 
   const updateEditorContent = useEditorUpdate(editor, editorContent, setEditorContent);
 
-  // Simplified initialization - set ready immediately when component mounts
+  // Simplified initialization - set ready when component mounts as backup
   useEffect(() => {
     const timer = setTimeout(() => {
-      console.log('Force setting editor as ready');
-      setIsEditorReady(true);
-    }, 2000); // Wait 2 seconds then mark as ready
+      if (!isEditorReady) {
+        console.log('Backup: Force setting editor as ready after 3 seconds');
+        setIsEditorReady(true);
+      }
+    }, 3000); // Wait 3 seconds as backup
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [isEditorReady]);
 
   // Fetch user ID and professor settings on component mount
   useEffect(() => {
@@ -614,15 +617,22 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
   };
 
   const menuItems = useMemo(() => {
-    // Only create menu items if the editor is fully initialized
+    // Use the dedicated editorInstance state for more reliable checks
+    if (isEditorReady && editorInstance) {
+      console.log('✅ Creating menu items with editor instance from state');
+      return getMenuItems(editorInstance, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations);
+    }
+    
+    // Fallback: try using ref-based instance
     if (isEditorReady && editor.current?.editor) {
-      console.log('Creating menu items with initialized editor');
+      console.log('✅ Creating menu items with editor instance from ref');
       return getMenuItems(editor.current.editor, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations);
     }
-    // Return menu items with null joditInstance if editor not ready - with disabled state
-    console.log('Editor not ready, creating menu items with null joditInstance');
+    
+    // Return menu items with null joditInstance as fallback
+    console.log('⚠️ Editor not ready or instance unavailable, creating menu items with null joditInstance');
     return getMenuItems(null, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations);
-  }, [isEditorReady, editor.current?.editor, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations]);
+  }, [isEditorReady, editorInstance, editor.current?.editor, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations]);
 
   // Modify config to disable copy/paste buttons if not allowed
   const config = useMemo(() => ({
@@ -722,9 +732,14 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
         }
       },
       afterInit: (jodit) => {
-        // Simple initialization - just log and set ready
-        console.log('Jodit editor initialized');
+        // Store the jodit instance in both ref and state
+        console.log('Jodit editor initialized, storing instance');
+        if (editor.current) {
+          editor.current.editor = jodit;
+        }
+        setEditorInstance(jodit);
         setIsEditorReady(true);
+        console.log('Editor marked as ready with instance stored');
       }
     }
   }), [isMobile, allowCopyPaste]);
