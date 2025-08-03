@@ -86,6 +86,29 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
   const [currentUserEmail, setCurrentUserEmail] = useState('');
   const cursorUpdateTimerRef = useRef(null);
 
+  // Add an additional check to ensure editor is fully ready
+  const [editorFullyInitialized, setEditorFullyInitialized] = useState(false);
+
+  useEffect(() => {
+    if (isEditorReady && editor.current?.editor) {
+      // Additional verification that the editor is truly ready
+      const checkEditorReady = () => {
+        const jodit = editor.current.editor;
+        if (jodit && jodit.container && jodit.container.querySelector('.jodit-wysiwyg')) {
+          console.log('Editor fully initialized and ready');
+          setEditorFullyInitialized(true);
+        } else {
+          // Retry after a short delay
+          setTimeout(checkEditorReady, 50);
+        }
+      };
+      
+      checkEditorReady();
+    } else {
+      setEditorFullyInitialized(false);
+    }
+  }, [isEditorReady, editor.current?.editor]);
+
   // Add copy-paste restriction state
   const [allowCopyPaste, setAllowCopyPaste] = useState(true);
   const [copyPasteWarningVisible, setCopyPasteWarningVisible] = useState(false);
@@ -605,12 +628,14 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
 
   const menuItems = useMemo(() => {
     // Only create menu items if the editor is fully initialized
-    if (isEditorReady && editor.current?.editor) {
+    if (editorFullyInitialized && editor.current?.editor) {
+      console.log('Creating menu items with fully initialized editor');
       return getMenuItems(editor.current.editor, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations);
     }
-    // Return menu items with null joditInstance if editor not ready
+    // Return menu items with null joditInstance if editor not ready - with disabled state
+    console.log('Editor not fully ready, creating menu items with null joditInstance');
     return getMenuItems(null, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations);
-  }, [isEditorReady, editor.current?.editor, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations]);
+  }, [editorFullyInitialized, editor.current?.editor, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations]);
 
   // Modify config to disable copy/paste buttons if not allowed
   const config = useMemo(() => ({
@@ -712,7 +737,11 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
       afterInit: (jodit) => {
         // Set editor as ready when fully initialized
         console.log('Jodit editor initialized:', jodit);
-        setIsEditorReady(true);
+        // Add a small delay to ensure everything is properly set up
+        setTimeout(() => {
+          setIsEditorReady(true);
+          console.log('Editor marked as ready');
+        }, 100);
       }
     }
   }), [isMobile, allowCopyPaste]);
@@ -745,7 +774,21 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
       />
       {isLoading && <LoadingOverlay />}
       {renderCopyPasteWarning()}
-      <EditorToolbar activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} menuItems={menuItems} />
+      
+      {/* Editor Status Indicator */}
+      {!editorFullyInitialized && (
+        <div className="fixed top-16 left-1/2 transform -translate-x-1/2 bg-[#FFB800] text-black px-4 py-2 rounded-lg shadow-lg z-50 flex items-center gap-2">
+          <div className="animate-spin rounded-full h-4 w-4 border-2 border-black border-t-transparent"></div>
+          <span className="text-sm font-medium">Editor loading...</span>
+        </div>
+      )}
+      
+      <EditorToolbar 
+        activeDropdown={activeDropdown} 
+        setActiveDropdown={setActiveDropdown} 
+        menuItems={menuItems} 
+        isEditorReady={editorFullyInitialized} 
+      />
       {isEditorVisible && (
         <div className="flex flex-1 h-full">
           <Sidebar />

@@ -41,6 +41,7 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       action: () => {
         if (!joditInstance) {
           console.warn('Editor not ready yet, zoom in unavailable');
+          alert('Editor is still loading. Please wait a moment and try again.');
           return;
         }
         try {
@@ -87,6 +88,7 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       action: () => {
         if (!joditInstance) {
           console.warn('Editor not ready yet, zoom out unavailable');
+          alert('Editor is still loading. Please wait a moment and try again.');
           return;
         }
         try {
@@ -138,6 +140,7 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       action: () => {
         if (!joditInstance) {
           console.warn('Editor not ready yet, fullscreen unavailable');
+          alert('Editor is still loading. Please wait a moment and try again.');
           return;
         }
         try {
@@ -241,6 +244,7 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
           }
         } catch (error) {
           console.error('Full screen error:', error);
+          alert('Unable to enter fullscreen mode. This may be due to browser restrictions or editor not being ready.');
         }
       },
     },
