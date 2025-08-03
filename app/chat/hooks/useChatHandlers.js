@@ -351,23 +351,22 @@ export const useChatHandlers = (
 
       if (!response.ok) throw new Error('Failed to delete message');
 
+      // Remove the message(s) from UI but DO NOT rollback counters
       if (!messageToDelete.isBot && index + 1 < messages.length) {
+        // User message with following bot response - remove both
         setMessages(prev => prev.filter((_, i) => i !== index && i !== index + 1));
       } else if (messageToDelete.isBot && index > 0) {
+        // Bot message with preceding user message - remove both
         setMessages(prev => prev.filter((_, i) => i !== index && i !== index - 1));
       } else {
+        // Single message - remove only this one
         setMessages(prev => prev.filter((_, i) => i !== index));
       }
 
-      // Update token count if it was a bot message with token usage
-      if (messageToDelete.isBot && messageToDelete.tokenUsage) {
-        setTotalTokenUsage(prev => prev - (messageToDelete.tokenUsage.total_tokens || 0));
-      }
-      
-      // Update prompt count if it was a user message
-      if (!messageToDelete.isBot) {
-        setTotalPrompts(prev => Math.max(0, prev - 1));
-      }
+      // SECURITY FIX: Do NOT rollback token usage or prompt counters
+      // This prevents exploitation of the prompt limit system by deleting messages
+      // The counters should remain as they were to maintain usage integrity
+      // Users cannot bypass limits by deleting previously submitted prompts
 
       toast.dismiss(loadingToast);
       toast.success('Message deleted successfully');

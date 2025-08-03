@@ -39,32 +39,45 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       label: "Zoom In",
       icon: Plus,
       action: () => {
-        console.log('Zoom In clicked, joditInstance:', joditInstance);
         if (!joditInstance) {
-          console.log('Editor not ready yet, zoom in unavailable');
+          console.warn('Editor not ready yet, zoom in unavailable');
           return;
         }
         try {
-          // Access the editor's wysiwyg area correctly
+          // First try direct Jodit API if available
+          if (joditInstance.options && joditInstance.options.fontSize) {
+            const currentSize = parseInt(joditInstance.options.fontSize) || 14;
+            const newSize = Math.min(currentSize + 2, 32); // Cap at 32px
+            joditInstance.options.fontSize = newSize;
+            joditInstance.setEditorValue(joditInstance.getEditorValue());
+            return;
+          }
+
+          // Try accessing the wysiwyg area
           const editorElement = joditInstance.container.querySelector('.jodit-wysiwyg');
-          console.log('editorElement found:', editorElement);
           if (editorElement) {
             const currentSize = parseInt(window.getComputedStyle(editorElement).fontSize) || 14;
-            console.log('Current font size:', currentSize);
-            const newSize = currentSize + 2;
+            const newSize = Math.min(currentSize + 2, 32); // Cap at 32px
             editorElement.style.fontSize = `${newSize}px`;
-            console.log('New font size set:', `${newSize}px`);
+            // Also apply to all paragraphs and content within
+            const allElements = editorElement.querySelectorAll('*');
+            allElements.forEach(el => {
+              if (el.style.fontSize === '' || !el.style.fontSize) {
+                el.style.fontSize = `${newSize}px`;
+              }
+            });
           } else {
-            // Fallback: try direct iframe access
+            // Fallback: try iframe access
             const iframe = joditInstance.container.querySelector('.jodit-wysiwyg_iframe');
             if (iframe && iframe.contentDocument) {
               const body = iframe.contentDocument.body;
               const currentSize = parseInt(window.getComputedStyle(body).fontSize) || 14;
-              body.style.fontSize = `${currentSize + 2}px`;
+              const newSize = Math.min(currentSize + 2, 32); // Cap at 32px
+              body.style.fontSize = `${newSize}px`;
             }
           }
         } catch (error) {
-          console.log('Zoom in error:', error);
+          console.error('Zoom in error:', error);
         }
       },
     },
@@ -72,32 +85,45 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       label: "Zoom Out",
       icon: Minus,
       action: () => {
-        console.log('Zoom Out clicked, joditInstance:', joditInstance);
         if (!joditInstance) {
-          console.log('Editor not ready yet, zoom out unavailable');
+          console.warn('Editor not ready yet, zoom out unavailable');
           return;
         }
         try {
-          // Access the editor's wysiwyg area correctly
+          // First try direct Jodit API if available
+          if (joditInstance.options && joditInstance.options.fontSize) {
+            const currentSize = parseInt(joditInstance.options.fontSize) || 14;
+            const newSize = Math.max(currentSize - 2, 8); // Minimum 8px
+            joditInstance.options.fontSize = newSize;
+            joditInstance.setEditorValue(joditInstance.getEditorValue());
+            return;
+          }
+
+          // Try accessing the wysiwyg area
           const editorElement = joditInstance.container.querySelector('.jodit-wysiwyg');
-          console.log('editorElement found:', editorElement);
           if (editorElement) {
             const currentSize = parseInt(window.getComputedStyle(editorElement).fontSize) || 14;
-            console.log('Current font size:', currentSize);
-            const newSize = Math.max(currentSize - 2, 8);
+            const newSize = Math.max(currentSize - 2, 8); // Minimum 8px
             editorElement.style.fontSize = `${newSize}px`;
-            console.log('New font size set:', `${newSize}px`);
+            // Also apply to all paragraphs and content within
+            const allElements = editorElement.querySelectorAll('*');
+            allElements.forEach(el => {
+              if (el.style.fontSize === '' || !el.style.fontSize) {
+                el.style.fontSize = `${newSize}px`;
+              }
+            });
           } else {
-            // Fallback: try direct iframe access
+            // Fallback: try iframe access
             const iframe = joditInstance.container.querySelector('.jodit-wysiwyg_iframe');
             if (iframe && iframe.contentDocument) {
               const body = iframe.contentDocument.body;
               const currentSize = parseInt(window.getComputedStyle(body).fontSize) || 14;
-              body.style.fontSize = `${Math.max(currentSize - 2, 8)}px`;
+              const newSize = Math.max(currentSize - 2, 8); // Minimum 8px
+              body.style.fontSize = `${newSize}px`;
             }
           }
         } catch (error) {
-          console.log('Zoom out error:', error);
+          console.error('Zoom out error:', error);
         }
       },
     },
@@ -110,51 +136,111 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       label: "Full Screen",
       icon: Maximize2,
       action: () => {
-        console.log('Full Screen clicked, joditInstance:', joditInstance);
         if (!joditInstance) {
-          console.log('Editor not ready yet, fullscreen unavailable');
+          console.warn('Editor not ready yet, fullscreen unavailable');
           return;
         }
         try {
-          // Use Jodit's built-in fullscreen toggle
+          // Primary method: Use Jodit's built-in fullscreen toggle
           if (typeof joditInstance.toggleFullSize === 'function') {
-            console.log('Using toggleFullSize method');
             joditInstance.toggleFullSize();
-          } else if (typeof joditInstance.execCommand === 'function') {
-            console.log('Using execCommand fullsize');
+            return;
+          }
+          
+          // Alternative method: Use execCommand
+          if (typeof joditInstance.execCommand === 'function') {
             joditInstance.execCommand('fullsize');
-          } else {
-            console.log('Using manual fullscreen via container');
-            // Fallback: manual fullscreen on the container
-            const editorContainer = joditInstance.container;
-            if (editorContainer) {
-              if (!document.fullscreenElement) {
-                // Enter fullscreen
-                if (editorContainer.requestFullscreen) {
-                  editorContainer.requestFullscreen();
-                } else if (editorContainer.webkitRequestFullscreen) {
-                  editorContainer.webkitRequestFullscreen();
-                } else if (editorContainer.mozRequestFullScreen) {
-                  editorContainer.mozRequestFullScreen();
-                } else if (editorContainer.msRequestFullscreen) {
-                  editorContainer.msRequestFullscreen();
-                }
+            return;
+          }
+          
+          // Fallback method: Manual fullscreen implementation
+          const editorContainer = joditInstance.container;
+          if (editorContainer) {
+            if (!document.fullscreenElement) {
+              // Enter fullscreen
+              if (editorContainer.requestFullscreen) {
+                editorContainer.requestFullscreen().catch(err => {
+                  console.warn('Fullscreen request failed:', err);
+                  // Alternative: Add fullscreen class for CSS-based fullscreen
+                  editorContainer.classList.add('jodit-fullscreen');
+                  editorContainer.style.position = 'fixed';
+                  editorContainer.style.top = '0';
+                  editorContainer.style.left = '0';
+                  editorContainer.style.width = '100vw';
+                  editorContainer.style.height = '100vh';
+                  editorContainer.style.zIndex = '9999';
+                  editorContainer.style.backgroundColor = '#1a1a1a';
+                });
+              } else if (editorContainer.webkitRequestFullscreen) {
+                editorContainer.webkitRequestFullscreen();
+              } else if (editorContainer.mozRequestFullScreen) {
+                editorContainer.mozRequestFullScreen();
+              } else if (editorContainer.msRequestFullscreen) {
+                editorContainer.msRequestFullscreen();
               } else {
-                // Exit fullscreen
-                if (document.exitFullscreen) {
-                  document.exitFullscreen();
-                } else if (document.webkitExitFullscreen) {
-                  document.webkitExitFullscreen();
-                } else if (document.mozCancelFullScreen) {
-                  document.mozCancelFullScreen();
-                } else if (document.msExitFullscreen) {
-                  document.msExitFullscreen();
-                }
+                // CSS-based fullscreen fallback
+                editorContainer.classList.add('jodit-fullscreen');
+                editorContainer.style.position = 'fixed';
+                editorContainer.style.top = '0';
+                editorContainer.style.left = '0';
+                editorContainer.style.width = '100vw';
+                editorContainer.style.height = '100vh';
+                editorContainer.style.zIndex = '9999';
+                editorContainer.style.backgroundColor = '#1a1a1a';
+                
+                // Add exit button for CSS fullscreen
+                const exitBtn = document.createElement('button');
+                exitBtn.innerHTML = '✕ Exit Fullscreen';
+                exitBtn.style.position = 'absolute';
+                exitBtn.style.top = '10px';
+                exitBtn.style.right = '10px';
+                exitBtn.style.zIndex = '10000';
+                exitBtn.style.padding = '8px 12px';
+                exitBtn.style.backgroundColor = '#262626';
+                exitBtn.style.color = 'white';
+                exitBtn.style.border = 'none';
+                exitBtn.style.borderRadius = '4px';
+                exitBtn.style.cursor = 'pointer';
+                exitBtn.onclick = () => {
+                  editorContainer.classList.remove('jodit-fullscreen');
+                  editorContainer.style.position = '';
+                  editorContainer.style.top = '';
+                  editorContainer.style.left = '';
+                  editorContainer.style.width = '';
+                  editorContainer.style.height = '';
+                  editorContainer.style.zIndex = '';
+                  editorContainer.style.backgroundColor = '';
+                  exitBtn.remove();
+                };
+                editorContainer.appendChild(exitBtn);
               }
+            } else {
+              // Exit fullscreen
+              if (document.exitFullscreen) {
+                document.exitFullscreen();
+              } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+              } else if (document.mozCancelFullScreen) {
+                document.mozCancelFullScreen();
+              } else if (document.msExitFullscreen) {
+                document.msExitFullscreen();
+              }
+              
+              // Also handle CSS-based fullscreen
+              editorContainer.classList.remove('jodit-fullscreen');
+              editorContainer.style.position = '';
+              editorContainer.style.top = '';
+              editorContainer.style.left = '';
+              editorContainer.style.width = '';
+              editorContainer.style.height = '';
+              editorContainer.style.zIndex = '';
+              editorContainer.style.backgroundColor = '';
+              const exitBtn = editorContainer.querySelector('button[onclick]');
+              if (exitBtn) exitBtn.remove();
             }
           }
         } catch (error) {
-          console.log('Full screen error:', error);
+          console.error('Full screen error:', error);
         }
       },
     },
@@ -164,8 +250,8 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       label: "Support",
       icon: FileText,
       action: () => {
-        // Open email client with support email
-        window.location.href = "mailto:support@belto.world?subject=Belto%20Doc%20Editor%20Support%20Request";
+        // Open official Belto website in new tab
+        window.open("https://belto.world", "_blank");
       },
     },
     {

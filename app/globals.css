@@ -48,6 +48,26 @@ body {
   min-width: 0;
 }
 
+/* Jodit editor fullscreen styles */
+.jodit-fullscreen {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 9999 !important;
+  background-color: #1a1a1a !important;
+}
+
+.jodit-fullscreen .jodit-wysiwyg {
+  height: calc(100vh - 80px) !important;
+}
+
+.jodit-fullscreen .jodit-toolbar {
+  background-color: #262626 !important;
+  border-bottom: 1px solid #363636 !important;
+}
+
 /* Add to your global.css or equivalent */
 .prose pre {
   margin: 0;
