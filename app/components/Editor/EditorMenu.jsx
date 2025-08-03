@@ -41,41 +41,40 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       action: () => {
         if (!joditInstance) {
           console.warn('Editor not ready yet, zoom in unavailable');
-          // Less intrusive feedback - just console warning for now
           return;
         }
         try {
-          // First try direct Jodit API if available
-          if (joditInstance.options && joditInstance.options.fontSize) {
-            const currentSize = parseInt(joditInstance.options.fontSize) || 14;
-            const newSize = Math.min(currentSize + 2, 32); // Cap at 32px
-            joditInstance.options.fontSize = newSize;
-            joditInstance.setEditorValue(joditInstance.getEditorValue());
-            return;
-          }
-
-          // Try accessing the wysiwyg area
-          const editorElement = joditInstance.container.querySelector('.jodit-wysiwyg');
-          if (editorElement) {
-            const currentSize = parseInt(window.getComputedStyle(editorElement).fontSize) || 14;
-            const newSize = Math.min(currentSize + 2, 32); // Cap at 32px
-            editorElement.style.fontSize = `${newSize}px`;
-            // Also apply to all paragraphs and content within
-            const allElements = editorElement.querySelectorAll('*');
-            allElements.forEach(el => {
-              if (el.style.fontSize === '' || !el.style.fontSize) {
-                el.style.fontSize = `${newSize}px`;
-              }
-            });
-          } else {
-            // Fallback: try iframe access
+          // Get the editor element - try wysiwyg first, then iframe
+          let editorElement = joditInstance.container.querySelector('.jodit-wysiwyg');
+          let isIframe = false;
+          
+          if (!editorElement) {
             const iframe = joditInstance.container.querySelector('.jodit-wysiwyg_iframe');
             if (iframe && iframe.contentDocument) {
-              const body = iframe.contentDocument.body;
-              const currentSize = parseInt(window.getComputedStyle(body).fontSize) || 14;
-              const newSize = Math.min(currentSize + 2, 32); // Cap at 32px
-              body.style.fontSize = `${newSize}px`;
+              editorElement = iframe.contentDocument.body;
+              isIframe = true;
             }
+          }
+          
+          if (editorElement) {
+            // Get current zoom level from a data attribute or default to 100%
+            let currentZoom = parseInt(editorElement.getAttribute('data-zoom-level')) || 100;
+            const newZoom = Math.min(currentZoom + 10, 200); // Max 200%
+            
+            // Apply zoom using CSS transform
+            editorElement.style.transform = `scale(${newZoom / 100})`;
+            editorElement.style.transformOrigin = 'top left';
+            
+            // Store zoom level for future reference
+            editorElement.setAttribute('data-zoom-level', newZoom);
+            
+            // Adjust container if needed
+            const container = isIframe ? editorElement.parentElement : editorElement;
+            if (container) {
+              container.style.overflow = 'auto';
+            }
+            
+            console.log(`Zoomed in to ${newZoom}%`);
           }
         } catch (error) {
           console.error('Zoom in error:', error);
@@ -88,41 +87,40 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       action: () => {
         if (!joditInstance) {
           console.warn('Editor not ready yet, zoom out unavailable');
-          // Less intrusive feedback - just console warning for now
           return;
         }
         try {
-          // First try direct Jodit API if available
-          if (joditInstance.options && joditInstance.options.fontSize) {
-            const currentSize = parseInt(joditInstance.options.fontSize) || 14;
-            const newSize = Math.max(currentSize - 2, 8); // Minimum 8px
-            joditInstance.options.fontSize = newSize;
-            joditInstance.setEditorValue(joditInstance.getEditorValue());
-            return;
-          }
-
-          // Try accessing the wysiwyg area
-          const editorElement = joditInstance.container.querySelector('.jodit-wysiwyg');
-          if (editorElement) {
-            const currentSize = parseInt(window.getComputedStyle(editorElement).fontSize) || 14;
-            const newSize = Math.max(currentSize - 2, 8); // Minimum 8px
-            editorElement.style.fontSize = `${newSize}px`;
-            // Also apply to all paragraphs and content within
-            const allElements = editorElement.querySelectorAll('*');
-            allElements.forEach(el => {
-              if (el.style.fontSize === '' || !el.style.fontSize) {
-                el.style.fontSize = `${newSize}px`;
-              }
-            });
-          } else {
-            // Fallback: try iframe access
+          // Get the editor element - try wysiwyg first, then iframe
+          let editorElement = joditInstance.container.querySelector('.jodit-wysiwyg');
+          let isIframe = false;
+          
+          if (!editorElement) {
             const iframe = joditInstance.container.querySelector('.jodit-wysiwyg_iframe');
             if (iframe && iframe.contentDocument) {
-              const body = iframe.contentDocument.body;
-              const currentSize = parseInt(window.getComputedStyle(body).fontSize) || 14;
-              const newSize = Math.max(currentSize - 2, 8); // Minimum 8px
-              body.style.fontSize = `${newSize}px`;
+              editorElement = iframe.contentDocument.body;
+              isIframe = true;
             }
+          }
+          
+          if (editorElement) {
+            // Get current zoom level from a data attribute or default to 100%
+            let currentZoom = parseInt(editorElement.getAttribute('data-zoom-level')) || 100;
+            const newZoom = Math.max(currentZoom - 10, 50); // Min 50%
+            
+            // Apply zoom using CSS transform
+            editorElement.style.transform = `scale(${newZoom / 100})`;
+            editorElement.style.transformOrigin = 'top left';
+            
+            // Store zoom level for future reference
+            editorElement.setAttribute('data-zoom-level', newZoom);
+            
+            // Adjust container if needed
+            const container = isIframe ? editorElement.parentElement : editorElement;
+            if (container) {
+              container.style.overflow = 'auto';
+            }
+            
+            console.log(`Zoomed out to ${newZoom}%`);
           }
         } catch (error) {
           console.error('Zoom out error:', error);
@@ -135,102 +133,117 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       action: () => setIsEditorVisible((prev) => !prev)
     },
     {
+      label: "Reset Zoom",
+      icon: Type,
+      action: () => {
+        if (!joditInstance) {
+          console.warn('Editor not ready yet, reset zoom unavailable');
+          return;
+        }
+        try {
+          // Get the editor element - try wysiwyg first, then iframe
+          let editorElement = joditInstance.container.querySelector('.jodit-wysiwyg');
+          let isIframe = false;
+          
+          if (!editorElement) {
+            const iframe = joditInstance.container.querySelector('.jodit-wysiwyg_iframe');
+            if (iframe && iframe.contentDocument) {
+              editorElement = iframe.contentDocument.body;
+              isIframe = true;
+            }
+          }
+          
+          if (editorElement) {
+            // Reset zoom to 100%
+            editorElement.style.transform = 'scale(1)';
+            editorElement.style.transformOrigin = 'top left';
+            editorElement.setAttribute('data-zoom-level', '100');
+            
+            console.log('Zoom reset to 100%');
+          }
+        } catch (error) {
+          console.error('Reset zoom error:', error);
+        }
+      },
+    },
+    {
       label: "Full Screen",
       icon: Maximize2,
       action: () => {
         if (!joditInstance) {
           console.warn('Editor not ready yet, fullscreen unavailable');
-          // Less intrusive feedback - just console warning for now
           return;
         }
         try {
-          // Primary method: Use Jodit's built-in fullscreen toggle
+          // Use Jodit's built-in fullscreen if available
           if (typeof joditInstance.toggleFullSize === 'function') {
             joditInstance.toggleFullSize();
             return;
           }
           
-          // Alternative method: Use execCommand
+          // Alternative: Use Jodit's execCommand for fullsize
           if (typeof joditInstance.execCommand === 'function') {
             joditInstance.execCommand('fullsize');
             return;
           }
           
-          // Fallback method: Manual fullscreen implementation
+          // Custom fullscreen implementation
           const editorContainer = joditInstance.container;
-          if (editorContainer) {
-            if (!document.fullscreenElement) {
-              // Enter fullscreen
-              if (editorContainer.requestFullscreen) {
-                editorContainer.requestFullscreen().catch(err => {
-                  console.warn('Fullscreen request failed:', err);
-                  // Alternative: Add fullscreen class for CSS-based fullscreen
-                  editorContainer.classList.add('jodit-fullscreen');
-                  editorContainer.style.position = 'fixed';
-                  editorContainer.style.top = '0';
-                  editorContainer.style.left = '0';
-                  editorContainer.style.width = '100vw';
-                  editorContainer.style.height = '100vh';
-                  editorContainer.style.zIndex = '9999';
-                  editorContainer.style.backgroundColor = '#1a1a1a';
-                });
-              } else if (editorContainer.webkitRequestFullscreen) {
-                editorContainer.webkitRequestFullscreen();
-              } else if (editorContainer.mozRequestFullScreen) {
-                editorContainer.mozRequestFullScreen();
-              } else if (editorContainer.msRequestFullscreen) {
-                editorContainer.msRequestFullscreen();
-              } else {
-                // CSS-based fullscreen fallback
-                editorContainer.classList.add('jodit-fullscreen');
-                editorContainer.style.position = 'fixed';
-                editorContainer.style.top = '0';
-                editorContainer.style.left = '0';
-                editorContainer.style.width = '100vw';
-                editorContainer.style.height = '100vh';
-                editorContainer.style.zIndex = '9999';
-                editorContainer.style.backgroundColor = '#1a1a1a';
-                
-                // Add exit button for CSS fullscreen
-                const exitBtn = document.createElement('button');
-                exitBtn.innerHTML = '✕ Exit Fullscreen';
-                exitBtn.style.position = 'absolute';
-                exitBtn.style.top = '10px';
-                exitBtn.style.right = '10px';
-                exitBtn.style.zIndex = '10000';
-                exitBtn.style.padding = '8px 12px';
-                exitBtn.style.backgroundColor = '#262626';
-                exitBtn.style.color = 'white';
-                exitBtn.style.border = 'none';
-                exitBtn.style.borderRadius = '4px';
-                exitBtn.style.cursor = 'pointer';
-                exitBtn.onclick = () => {
-                  editorContainer.classList.remove('jodit-fullscreen');
-                  editorContainer.style.position = '';
-                  editorContainer.style.top = '';
-                  editorContainer.style.left = '';
-                  editorContainer.style.width = '';
-                  editorContainer.style.height = '';
-                  editorContainer.style.zIndex = '';
-                  editorContainer.style.backgroundColor = '';
-                  exitBtn.remove();
-                };
-                editorContainer.appendChild(exitBtn);
-              }
-            } else {
-              // Exit fullscreen
-              if (document.exitFullscreen) {
-                document.exitFullscreen();
-              } else if (document.webkitExitFullscreen) {
-                document.webkitExitFullscreen();
-              } else if (document.mozCancelFullScreen) {
-                document.mozCancelFullScreen();
-              } else if (document.msExitFullscreen) {
-                document.msExitFullscreen();
-              }
-              
-              // Also handle CSS-based fullscreen
-              editorContainer.classList.remove('jodit-fullscreen');
+          const isAlreadyFullscreen = editorContainer.classList.contains('custom-fullscreen');
+          
+          if (!isAlreadyFullscreen) {
+            // Enter custom fullscreen
+            editorContainer.classList.add('custom-fullscreen');
+            
+            // Apply fullscreen styles
+            editorContainer.style.position = 'fixed';
+            editorContainer.style.top = '0';
+            editorContainer.style.left = '0';
+            editorContainer.style.width = '100vw';
+            editorContainer.style.height = '100vh';
+            editorContainer.style.zIndex = '9999';
+            editorContainer.style.backgroundColor = '#1a1a1a';
+            
+            // Ensure editor content is visible and properly sized
+            const editorArea = editorContainer.querySelector('.jodit-wysiwyg, .jodit-source');
+            const toolbar = editorContainer.querySelector('.jodit-toolbar');
+            
+            if (editorArea) {
+              // Calculate proper height considering toolbar
+              const toolbarHeight = toolbar ? toolbar.offsetHeight : 60;
+              editorArea.style.height = `calc(100vh - ${toolbarHeight + 20}px)`;
+              editorArea.style.backgroundColor = 'white';
+              editorArea.style.color = 'black';
+              editorArea.style.overflow = 'auto';
+            }
+            
+            // Ensure toolbar is visible
+            if (toolbar) {
+              toolbar.style.backgroundColor = '#2a2a2a';
+              toolbar.style.borderBottom = '1px solid #444';
+            }
+            
+            // Add exit button
+            const exitBtn = document.createElement('button');
+            exitBtn.innerHTML = '✕ Exit Fullscreen';
+            exitBtn.className = 'fullscreen-exit-btn';
+            exitBtn.style.cssText = `
+              position: absolute;
+              top: 10px;
+              right: 10px;
+              z-index: 10000;
+              padding: 8px 12px;
+              background-color: #262626;
+              color: white;
+              border: none;
+              border-radius: 4px;
+              cursor: pointer;
+              font-size: 12px;
+            `;
+            
+            exitBtn.onclick = () => {
+              // Exit custom fullscreen
+              editorContainer.classList.remove('custom-fullscreen');
               editorContainer.style.position = '';
               editorContainer.style.top = '';
               editorContainer.style.left = '';
@@ -238,8 +251,42 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
               editorContainer.style.height = '';
               editorContainer.style.zIndex = '';
               editorContainer.style.backgroundColor = '';
-              const exitBtn = editorContainer.querySelector('button[onclick]');
-              if (exitBtn) exitBtn.remove();
+              
+              // Reset editor area
+              const editorArea = editorContainer.querySelector('.jodit-wysiwyg, .jodit-source');
+              const toolbar = editorContainer.querySelector('.jodit-toolbar');
+              
+              if (editorArea) {
+                editorArea.style.height = '';
+                editorArea.style.backgroundColor = '';
+                editorArea.style.color = '';
+                editorArea.style.overflow = '';
+              }
+              
+              if (toolbar) {
+                toolbar.style.backgroundColor = '';
+                toolbar.style.borderBottom = '';
+              }
+              
+              exitBtn.remove();
+            };
+            
+            editorContainer.appendChild(exitBtn);
+            
+            // Also listen for Escape key
+            const handleEscape = (e) => {
+              if (e.key === 'Escape') {
+                exitBtn.click();
+                document.removeEventListener('keydown', handleEscape);
+              }
+            };
+            document.addEventListener('keydown', handleEscape);
+            
+          } else {
+            // Exit if already in fullscreen
+            const exitBtn = editorContainer.querySelector('.fullscreen-exit-btn');
+            if (exitBtn) {
+              exitBtn.click();
             }
           }
         } catch (error) {

@@ -880,6 +880,61 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
                   opacity: 0.4;
                   cursor: not-allowed;
                 }
+
+                /* Zoom functionality styles */
+                .jodit-wysiwyg[data-zoom-level] {
+                  transition: transform 0.3s ease;
+                  width: 100%;
+                }
+
+                /* Custom fullscreen styles */
+                .custom-fullscreen {
+                  position: fixed !important;
+                  top: 0 !important;
+                  left: 0 !important;
+                  width: 100vw !important;
+                  height: 100vh !important;
+                  z-index: 9999 !important;
+                  background-color: #1a1a1a !important;
+                }
+
+                .custom-fullscreen .jodit-wysiwyg {
+                  height: calc(100vh - 80px) !important;
+                  background-color: white !important;
+                }
+
+                .custom-fullscreen .jodit-source {
+                  height: calc(100vh - 80px) !important;
+                  background-color: white !important;
+                }
+
+                /* Ensure fullscreen button styling */
+                .fullscreen-exit-btn {
+                  font-family: system-ui, -apple-system, sans-serif;
+                  transition: all 0.2s ease;
+                }
+
+                .fullscreen-exit-btn:hover {
+                  background-color: #404040 !important;
+                  transform: scale(1.05);
+                }
+
+                /* Better zoom transform handling */
+                .jodit-wysiwyg {
+                  transform-origin: top left;
+                  width: 100%;
+                  box-sizing: border-box;
+                }
+
+                /* Ensure proper scrolling for zoomed content */
+                .jodit-container {
+                  overflow: auto;
+                }
+
+                /* Handle iframe zoom if needed */
+                .jodit-wysiwyg_iframe {
+                  transform-origin: top left;
+                }
               `}
             </style>
             <JoditEditor
