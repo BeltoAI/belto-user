@@ -175,52 +175,80 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
           return;
         }
         try {
-          // Use Jodit's built-in fullscreen if available
-          if (typeof joditInstance.toggleFullSize === 'function') {
-            joditInstance.toggleFullSize();
-            return;
-          }
-          
-          // Alternative: Use Jodit's execCommand for fullsize
-          if (typeof joditInstance.execCommand === 'function') {
-            joditInstance.execCommand('fullsize');
-            return;
-          }
-          
-          // Custom fullscreen implementation
+          // Skip Jodit's built-in fullscreen and use custom implementation
           const editorContainer = joditInstance.container;
           const isAlreadyFullscreen = editorContainer.classList.contains('custom-fullscreen');
           
           if (!isAlreadyFullscreen) {
+            console.log('Entering custom fullscreen mode');
+            
+            // Store original styles to restore later
+            const originalStyles = {
+              position: editorContainer.style.position,
+              top: editorContainer.style.top,
+              left: editorContainer.style.left,
+              width: editorContainer.style.width,
+              height: editorContainer.style.height,
+              zIndex: editorContainer.style.zIndex,
+              backgroundColor: editorContainer.style.backgroundColor
+            };
+            editorContainer.setAttribute('data-original-styles', JSON.stringify(originalStyles));
+            
             // Enter custom fullscreen
             editorContainer.classList.add('custom-fullscreen');
             
-            // Apply fullscreen styles
-            editorContainer.style.position = 'fixed';
-            editorContainer.style.top = '0';
-            editorContainer.style.left = '0';
-            editorContainer.style.width = '100vw';
-            editorContainer.style.height = '100vh';
-            editorContainer.style.zIndex = '9999';
-            editorContainer.style.backgroundColor = '#1a1a1a';
+            // Apply fullscreen styles with higher specificity
+            editorContainer.style.setProperty('position', 'fixed', 'important');
+            editorContainer.style.setProperty('top', '0', 'important');
+            editorContainer.style.setProperty('left', '0', 'important');
+            editorContainer.style.setProperty('width', '100vw', 'important');
+            editorContainer.style.setProperty('height', '100vh', 'important');
+            editorContainer.style.setProperty('z-index', '9999', 'important');
+            editorContainer.style.setProperty('background-color', '#1a1a1a', 'important');
             
-            // Ensure editor content is visible and properly sized
-            const editorArea = editorContainer.querySelector('.jodit-wysiwyg, .jodit-source');
+            // Find and style the editor content area
+            const editorArea = editorContainer.querySelector('.jodit-wysiwyg') || 
+                              editorContainer.querySelector('.jodit-source') ||
+                              editorContainer.querySelector('[contenteditable="true"]');
             const toolbar = editorContainer.querySelector('.jodit-toolbar');
+            const statusbar = editorContainer.querySelector('.jodit-statusbar');
             
             if (editorArea) {
-              // Calculate proper height considering toolbar
-              const toolbarHeight = toolbar ? toolbar.offsetHeight : 60;
-              editorArea.style.height = `calc(100vh - ${toolbarHeight + 20}px)`;
-              editorArea.style.backgroundColor = 'white';
-              editorArea.style.color = 'black';
-              editorArea.style.overflow = 'auto';
+              // Calculate proper height considering toolbar and statusbar
+              let toolbarHeight = 0;
+              let statusbarHeight = 0;
+              
+              if (toolbar && toolbar.offsetHeight) {
+                toolbarHeight = toolbar.offsetHeight;
+              }
+              if (statusbar && statusbar.offsetHeight) {
+                statusbarHeight = statusbar.offsetHeight;
+              }
+              
+              // Set editor area styles with high priority
+              editorArea.style.setProperty('height', `calc(100vh - ${toolbarHeight + statusbarHeight + 20}px)`, 'important');
+              editorArea.style.setProperty('background-color', 'white', 'important');
+              editorArea.style.setProperty('color', 'black', 'important');
+              editorArea.style.setProperty('overflow', 'auto', 'important');
+              editorArea.style.setProperty('display', 'block', 'important');
+              editorArea.style.setProperty('visibility', 'visible', 'important');
+              editorArea.style.setProperty('opacity', '1', 'important');
+              
+              console.log('Editor area styled for fullscreen');
             }
             
-            // Ensure toolbar is visible
+            // Ensure toolbar is visible and properly styled
             if (toolbar) {
-              toolbar.style.backgroundColor = '#2a2a2a';
-              toolbar.style.borderBottom = '1px solid #444';
+              toolbar.style.setProperty('background-color', '#2a2a2a', 'important');
+              toolbar.style.setProperty('border-bottom', '1px solid #444', 'important');
+              toolbar.style.setProperty('display', 'flex', 'important');
+              toolbar.style.setProperty('visibility', 'visible', 'important');
+            }
+            
+            // Ensure statusbar is visible if it exists
+            if (statusbar) {
+              statusbar.style.setProperty('display', 'block', 'important');
+              statusbar.style.setProperty('visibility', 'visible', 'important');
             }
             
             // Add exit button
@@ -228,44 +256,70 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
             exitBtn.innerHTML = '✕ Exit Fullscreen';
             exitBtn.className = 'fullscreen-exit-btn';
             exitBtn.style.cssText = `
-              position: absolute;
-              top: 10px;
-              right: 10px;
-              z-index: 10000;
-              padding: 8px 12px;
-              background-color: #262626;
-              color: white;
-              border: none;
-              border-radius: 4px;
-              cursor: pointer;
-              font-size: 12px;
+              position: absolute !important;
+              top: 10px !important;
+              right: 10px !important;
+              z-index: 10000 !important;
+              padding: 8px 12px !important;
+              background-color: #262626 !important;
+              color: white !important;
+              border: none !important;
+              border-radius: 4px !important;
+              cursor: pointer !important;
+              font-size: 12px !important;
+              font-family: system-ui, -apple-system, sans-serif !important;
             `;
             
             exitBtn.onclick = () => {
+              console.log('Exiting custom fullscreen mode');
+              
               // Exit custom fullscreen
               editorContainer.classList.remove('custom-fullscreen');
-              editorContainer.style.position = '';
-              editorContainer.style.top = '';
-              editorContainer.style.left = '';
-              editorContainer.style.width = '';
-              editorContainer.style.height = '';
-              editorContainer.style.zIndex = '';
-              editorContainer.style.backgroundColor = '';
+              
+              // Restore original styles
+              const originalStylesStr = editorContainer.getAttribute('data-original-styles');
+              if (originalStylesStr) {
+                const originalStyles = JSON.parse(originalStylesStr);
+                Object.keys(originalStyles).forEach(prop => {
+                  editorContainer.style[prop] = originalStyles[prop] || '';
+                });
+                editorContainer.removeAttribute('data-original-styles');
+              } else {
+                // Fallback: reset to empty
+                editorContainer.style.position = '';
+                editorContainer.style.top = '';
+                editorContainer.style.left = '';
+                editorContainer.style.width = '';
+                editorContainer.style.height = '';
+                editorContainer.style.zIndex = '';
+                editorContainer.style.backgroundColor = '';
+              }
               
               // Reset editor area
-              const editorArea = editorContainer.querySelector('.jodit-wysiwyg, .jodit-source');
+              const editorArea = editorContainer.querySelector('.jodit-wysiwyg, .jodit-source, [contenteditable="true"]');
               const toolbar = editorContainer.querySelector('.jodit-toolbar');
+              const statusbar = editorContainer.querySelector('.jodit-statusbar');
               
               if (editorArea) {
                 editorArea.style.height = '';
                 editorArea.style.backgroundColor = '';
                 editorArea.style.color = '';
                 editorArea.style.overflow = '';
+                editorArea.style.display = '';
+                editorArea.style.visibility = '';
+                editorArea.style.opacity = '';
               }
               
               if (toolbar) {
                 toolbar.style.backgroundColor = '';
                 toolbar.style.borderBottom = '';
+                toolbar.style.display = '';
+                toolbar.style.visibility = '';
+              }
+              
+              if (statusbar) {
+                statusbar.style.display = '';
+                statusbar.style.visibility = '';
               }
               
               exitBtn.remove();

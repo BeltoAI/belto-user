@@ -899,13 +899,41 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
                 }
 
                 .custom-fullscreen .jodit-wysiwyg {
-                  height: calc(100vh - 80px) !important;
                   background-color: white !important;
+                  color: black !important;
+                  display: block !important;
+                  visibility: visible !important;
+                  opacity: 1 !important;
+                  overflow: auto !important;
                 }
 
                 .custom-fullscreen .jodit-source {
-                  height: calc(100vh - 80px) !important;
                   background-color: white !important;
+                  color: black !important;
+                  display: block !important;
+                  visibility: visible !important;
+                  opacity: 1 !important;
+                  overflow: auto !important;
+                }
+
+                .custom-fullscreen .jodit-toolbar {
+                  background-color: #2a2a2a !important;
+                  border-bottom: 1px solid #444 !important;
+                  display: flex !important;
+                  visibility: visible !important;
+                }
+
+                .custom-fullscreen .jodit-statusbar {
+                  display: block !important;
+                  visibility: visible !important;
+                }
+
+                .custom-fullscreen [contenteditable="true"] {
+                  background-color: white !important;
+                  color: black !important;
+                  display: block !important;
+                  visibility: visible !important;
+                  opacity: 1 !important;
                 }
 
                 /* Ensure fullscreen button styling */
@@ -934,6 +962,38 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
                 /* Handle iframe zoom if needed */
                 .jodit-wysiwyg_iframe {
                   transform-origin: top left;
+                }
+
+                /* Additional fullscreen overrides */
+                .custom-fullscreen * {
+                  box-sizing: border-box;
+                }
+
+                /* Ensure text content is visible in fullscreen */
+                .custom-fullscreen .jodit-wysiwyg p,
+                .custom-fullscreen .jodit-wysiwyg div,
+                .custom-fullscreen .jodit-wysiwyg span,
+                .custom-fullscreen .jodit-wysiwyg h1,
+                .custom-fullscreen .jodit-wysiwyg h2,
+                .custom-fullscreen .jodit-wysiwyg h3,
+                .custom-fullscreen .jodit-wysiwyg h4,
+                .custom-fullscreen .jodit-wysiwyg h5,
+                .custom-fullscreen .jodit-wysiwyg h6 {
+                  color: black !important;
+                  background-color: transparent !important;
+                }
+
+                /* Override any dark theme styles in fullscreen */
+                .custom-fullscreen .jodit-container,
+                .custom-fullscreen .jodit-workplace {
+                  background-color: white !important;
+                }
+
+                /* Ensure proper layout in fullscreen */
+                .custom-fullscreen .jodit-workplace {
+                  display: flex !important;
+                  flex-direction: column !important;
+                  height: 100% !important;
                 }
               `}
             </style>
