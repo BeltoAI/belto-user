@@ -41,7 +41,7 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       action: () => {
         if (!joditInstance) {
           console.warn('Editor not ready yet, zoom in unavailable');
-          alert('Editor is still loading. Please wait a moment and try again.');
+          // Less intrusive feedback - just console warning for now
           return;
         }
         try {
@@ -88,7 +88,7 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       action: () => {
         if (!joditInstance) {
           console.warn('Editor not ready yet, zoom out unavailable');
-          alert('Editor is still loading. Please wait a moment and try again.');
+          // Less intrusive feedback - just console warning for now
           return;
         }
         try {
@@ -140,7 +140,7 @@ const getMenuItems = (joditInstance, setIsEditorVisible, handleFileOpen, handleP
       action: () => {
         if (!joditInstance) {
           console.warn('Editor not ready yet, fullscreen unavailable');
-          alert('Editor is still loading. Please wait a moment and try again.');
+          // Less intrusive feedback - just console warning for now
           return;
         }
         try {

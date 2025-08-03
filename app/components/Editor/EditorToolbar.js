@@ -29,7 +29,7 @@ const DropdownPortal = ({ children, buttonRef }) => {
   );
 };
 
-const EditorToolbar = ({ activeDropdown, setActiveDropdown, menuItems, isEditorReady = false }) => {
+const EditorToolbar = ({ activeDropdown, setActiveDropdown, menuItems, isEditorReady = true }) => {
   const buttonRefs = useRef({});
 
   useEffect(() => {
@@ -56,20 +56,12 @@ const EditorToolbar = ({ activeDropdown, setActiveDropdown, menuItems, isEditorR
               <button
                 ref={el => buttonRefs.current[menu] = el}
                 className={`text-white px-3 py-2 rounded whitespace-nowrap transition-colors ${
-                  !isEditorReady ? 'opacity-50 cursor-not-allowed' : ''
-                } ${
                   activeDropdown === menu ? "bg-[#363636]" : "hover:bg-[#363636]"
                 }`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (!isEditorReady) {
-                    console.log('Editor not ready, ignoring click');
-                    return;
-                  }
                   setActiveDropdown(activeDropdown === menu ? null : menu);
                 }}
-                disabled={!isEditorReady}
-                title={!isEditorReady ? 'Editor is loading...' : ''}
               >
                 {menu.charAt(0).toUpperCase() + menu.slice(1)}
               </button>
@@ -85,20 +77,12 @@ const EditorToolbar = ({ activeDropdown, setActiveDropdown, menuItems, isEditorR
                     {menuItems[menu].map((item, index) => (
                       <button
                         key={index}
-                        className={`flex items-center w-full px-4 py-2 text-sm whitespace-nowrap transition-colors duration-150 ${
-                          !isEditorReady ? 'text-gray-400 cursor-not-allowed opacity-50' : 'text-white hover:bg-[#363636]'
-                        }`}
+                        className="flex items-center w-full px-4 py-2 text-white hover:bg-[#363636] text-sm whitespace-nowrap transition-colors duration-150"
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (!isEditorReady) {
-                            console.log('Editor not ready, ignoring menu item click');
-                            return;
-                          }
                           item.action();
                           setActiveDropdown(null);
                         }}
-                        disabled={!isEditorReady}
-                        title={!isEditorReady ? 'Editor is loading...' : ''}
                       >
                         <item.icon className="w-4 h-4 mr-3" />
                         {item.label}
