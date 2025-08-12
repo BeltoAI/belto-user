@@ -2,8 +2,9 @@
 const axios = require('axios');
 
 const endpoints = [
-  'http://47.34.185.47:9999/v1/chat/completions',
-  'http://belto.myftp.biz:9999/v1/chat/completions'
+  'https://670902dce12f.ngrok-free.app/completion', // DeepSeek 8B (Double 3060) - FASTEST
+  'https://17f2-71-84-65-200.ngrok-free.app/secure-chat', // DeepSeek 8B (Single 3060) - VERY FAST
+  'http://belto.myftp.biz:9999/v1/chat/completions' // Backup endpoint
 ];
 
 const apiKey = 'qQhUOBjNamjELp2g69ww8APeFD8FNHW8';

@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import axios from 'axios';
 
 const endpoints = [
-  'http://belto.myftp.biz:9999/v1/chat/completions', // Move working endpoint first
-  'http://47.34.185.47:9999/v1/chat/completions'
+  'https://670902dce12f.ngrok-free.app/completion', // DeepSeek 8B (Double 3060) - FASTEST (~40 tokens/sec)
+  'https://17f2-71-84-65-200.ngrok-free.app/secure-chat', // DeepSeek 8B (Single 3060) - VERY FAST
+  'http://belto.myftp.biz:9999/v1/chat/completions' // Backup endpoint
 ];
 
 // Add a flag to enable fallback responses when all endpoints fail - ENABLED with better logging
@@ -262,25 +263,22 @@ async function healthCheck() {
     
     try {
       const startTime = Date.now();
-      // Use a simple POST request similar to the actual chat request to test endpoint health
-      const testPayload = {
-        model: 'default-model',
-        messages: [{ role: 'user', content: 'test' }],
-        max_tokens: 10
-      };
+      // Use endpoint-specific format for health check
+      const testMessages = [{ role: 'user', content: 'test' }];
+      const requestConfig = formatRequestForEndpoint(url, testMessages, process.env.AI_API_KEY || 'test');
       
-      const response = await axios.post(url, testPayload, {
+      const response = await axios.post(requestConfig.url, requestConfig.data, {
         timeout: 8000, // Increased timeout for health check
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.AI_API_KEY || 'test'}`
-        }
+        headers: requestConfig.headers
       });
       
       const responseTime = Date.now() - startTime;
       updateEndpointStats(url, true, responseTime);
+      
+      // Parse response to get content for logging
+      const parsedResponse = parseResponseFromEndpoint(response, url);
       console.log(`✅ Health check for ${url}: OK (${responseTime}ms)`);
-      console.log(`   Response: ${response.data.choices?.[0]?.message?.content || 'No content'}`);
+      console.log(`   Response: ${parsedResponse.content?.substring(0, 50) || 'No content'}...`);
     } catch (error) {
       console.log(`❌ Health check for ${url}: FAILED`);
       console.log(`   Error: ${error.code || error.message}`);
@@ -317,6 +315,103 @@ const initializeHealthCheck = () => {
     }
   }, HEALTH_CHECK_THRESHOLD / 2); // Check twice as often as the threshold
 };
+
+/**
+ * Formats request payload and headers for different endpoint types
+ * @param {string} endpoint - The endpoint URL
+ * @param {Array} messages - The messages array
+ * @param {string} apiKey - The API key
+ * @returns {Object} Formatted request config
+ */
+function formatRequestForEndpoint(endpoint, messages, apiKey) {
+  if (endpoint.includes('ngrok-free.app/completion')) {
+    // DeepSeek 8B (Double 3060) format
+    const prompt = messages.map(msg => {
+      if (msg.role === 'system') return msg.content;
+      if (msg.role === 'user') return `User: ${msg.content}`;
+      if (msg.role === 'assistant') return `Assistant: ${msg.content}`;
+      return msg.content;
+    }).join('\n') + '\nAssistant:';
+    
+    return {
+      url: endpoint,
+      data: {
+        prompt: prompt,
+        n_predict: 128,
+        temperature: 0.7
+      },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      }
+    };
+  } else if (endpoint.includes('ngrok-free.app/secure-chat')) {
+    // DeepSeek 8B (Single 3060) format
+    const prompt = messages.map(msg => {
+      if (msg.role === 'system') return msg.content;
+      if (msg.role === 'user') return `User: ${msg.content}`;
+      if (msg.role === 'assistant') return `Assistant: ${msg.content}`;
+      return msg.content;
+    }).join('\n');
+    
+    return {
+      url: endpoint,
+      data: {
+        prompt: prompt,
+        n_predict: 256
+      },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': 'belto_super_secure_34892_z7d8'
+      }
+    };
+  } else {
+    // Standard OpenAI-compatible format (backup endpoint)
+    return {
+      url: endpoint,
+      data: {
+        model: 'default-model',
+        messages: messages,
+        max_tokens: 1000,
+        temperature: 0.7
+      },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      }
+    };
+  }
+}
+
+/**
+ * Parses response from different endpoint formats
+ * @param {Object} response - The axios response object
+ * @param {string} endpoint - The endpoint URL
+ * @returns {Object} Normalized response
+ */
+function parseResponseFromEndpoint(response, endpoint) {
+  if (endpoint.includes('ngrok-free.app/completion') || endpoint.includes('ngrok-free.app/secure-chat')) {
+    // DeepSeek format
+    return {
+      content: response.data.content || '',
+      usage: {
+        total_tokens: response.data.tokens_predicted || 0,
+        prompt_tokens: response.data.tokens_evaluated || 0,
+        completion_tokens: response.data.tokens_predicted || 0
+      }
+    };
+  } else {
+    // Standard OpenAI format
+    return {
+      content: response.data.choices?.[0]?.message?.content || '',
+      usage: response.data.usage || {
+        total_tokens: 0,
+        prompt_tokens: 0,
+        completion_tokens: 0
+      }
+    };
+  }
+}
 
 // Initialize on module load
 if (typeof window === 'undefined') { // Only run on server side
@@ -692,29 +787,30 @@ export async function POST(request) {
         attemptedEndpoints.add(selectedEndpoint);
         console.log(`Attempt ${attempt}: Selected endpoint for request: ${selectedEndpoint}`);
         
+        // Format request for the specific endpoint type
+        const requestConfig = formatRequestForEndpoint(selectedEndpoint, messages, apiKey);
+        
         // Add detailed logging for debugging
         console.log('🔍 Request details:', {
           endpoint: selectedEndpoint,
           timeout: requestTimeout,
-          payloadSize: JSON.stringify(aiRequestPayload).length,
-          messageCount: aiRequestPayload.messages.length,
+          payloadSize: JSON.stringify(requestConfig.data).length,
+          messageCount: messages.length,
           attemptedEndpoints: Array.from(attemptedEndpoints),
           apiKeyPresent: !!apiKey,
-          apiKeyLength: apiKey ? apiKey.length : 0
+          apiKeyLength: apiKey ? apiKey.length : 0,
+          requestType: selectedEndpoint.includes('ngrok-free.app') ? 'DeepSeek' : 'OpenAI-compatible'
         });
         
         // Start timing the request for performance tracking
         const requestStartTime = Date.now();
 
-        // Make the AI API call with API key in headers
+        // Make the AI API call with formatted request
         const response = await axios.post(
-          selectedEndpoint,
-          aiRequestPayload,
+          requestConfig.url,
+          requestConfig.data,
           {
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${apiKey}`,
-            },
+            headers: requestConfig.headers,
             timeout: requestTimeout,
             // Remove validateStatus to get proper error responses
             validateStatus: function (status) {
@@ -729,35 +825,22 @@ export async function POST(request) {
 
         console.log(`AI response received with status: ${response.status}, time: ${responseTime}ms`);
         
-        // Validate response structure before processing
-        if (response.status === 200) {
-          console.log('🔍 Response structure validation:', {
-            hasData: !!response.data,
-            hasChoices: !!response.data?.choices,
-            choicesLength: response.data?.choices?.length || 0,
-            hasMessage: !!response.data?.choices?.[0]?.message,
-            hasContent: !!response.data?.choices?.[0]?.message?.content
-          });
-        }
-
+        // Parse response using endpoint-specific parser
+        const parsedResponse = parseResponseFromEndpoint(response, selectedEndpoint);
+        
         // Handle successful response
         if (response.status === 200) {
-          const aiContent = response.data.choices?.[0]?.message?.content;
-          console.log(`✅ AI response successful: ${aiContent?.substring(0, 100)}...`);
+          console.log(`✅ AI response successful: ${parsedResponse.content?.substring(0, 100)}...`);
           
           // Validate that we actually got content back
-          if (!aiContent || aiContent.trim().length === 0) {
+          if (!parsedResponse.content || parsedResponse.content.trim().length === 0) {
             console.error(`❌ Empty response content from ${selectedEndpoint}`);
             throw new Error('Empty response content received from AI service');
           }
           
           return NextResponse.json({
-            response: aiContent,
-            tokenUsage: response.data.usage || {
-              total_tokens: 0,
-              prompt_tokens: 0,
-              completion_tokens: 0
-            }
+            response: parsedResponse.content,
+            tokenUsage: parsedResponse.usage
           });
         } else {
           // Log detailed error for non-200 responses
