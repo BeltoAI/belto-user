@@ -1,5 +1,5 @@
 // Test script for new fast endpoints integration
-const axios = require('axios');
+import { post, get } from 'axios';
 
 const API_BASE = 'http://localhost:3000';
 
@@ -11,7 +11,7 @@ async function testNewEndpoints() {
   console.log('\n1. Testing simple message (should use fastest endpoint)...');
   try {
     const startTime = Date.now();
-    const response = await axios.post(`${API_BASE}/api/ai-proxy`, {
+    const response = await post(`${API_BASE}/api/ai-proxy`, {
       message: "Hello! How are you today?"
     }, {
       headers: { 'Content-Type': 'application/json' },
@@ -35,7 +35,7 @@ async function testNewEndpoints() {
   console.log('\n2. Testing complex message...');
   try {
     const startTime = Date.now();
-    const response = await axios.post(`${API_BASE}/api/ai-proxy`, {
+    const response = await post(`${API_BASE}/api/ai-proxy`, {
       message: "Explain the concept of machine learning, including supervised and unsupervised learning, with examples of each type."
     }, {
       headers: { 'Content-Type': 'application/json' },
@@ -55,7 +55,7 @@ async function testNewEndpoints() {
   console.log('\n3. Testing with chat history...');
   try {
     const startTime = Date.now();
-    const response = await axios.post(`${API_BASE}/api/ai-proxy`, {
+    const response = await post(`${API_BASE}/api/ai-proxy`, {
       message: "What did I just ask you about?",
       history: [
         { role: 'user', content: 'Tell me about quantum computing' },
@@ -77,7 +77,7 @@ async function testNewEndpoints() {
   // Test 4: Check endpoint status
   console.log('\n4. Checking endpoint status...');
   try {
-    const response = await axios.get(`${API_BASE}/api/ai-proxy/status`);
+    const response = await get(`${API_BASE}/api/ai-proxy/status`);
     console.log('✅ Status check successful:');
     console.log(`Total endpoints: ${response.data.totalEndpoints}`);
     console.log(`Status: ${response.data.status}`);
@@ -102,7 +102,7 @@ async function testNewEndpoints() {
   for (let i = 0; i < testMessages.length; i++) {
     try {
       const startTime = Date.now();
-      const response = await axios.post(`${API_BASE}/api/ai-proxy`, {
+      const response = await post(`${API_BASE}/api/ai-proxy`, {
         message: testMessages[i]
       }, {
         headers: { 'Content-Type': 'application/json' },
@@ -139,7 +139,7 @@ async function testNewEndpoints() {
 // Check if server is running first
 async function checkServer() {
   try {
-    await axios.get(`${API_BASE}/api/ai-proxy/status`, { timeout: 5000 });
+    await get(`${API_BASE}/api/ai-proxy/status`, { timeout: 5000 });
     console.log('✅ Server is running');
     return true;
   } catch (error) {

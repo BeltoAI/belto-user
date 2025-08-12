@@ -1,5 +1,5 @@
 // Simple test script to check AI endpoints
-const axios = require('axios');
+import { post } from 'axios';
 
 const endpoints = [
   'https://670902dce12f.ngrok-free.app/completion', // DeepSeek 8B (Double 3060) - FASTEST
@@ -21,7 +21,7 @@ async function testEndpoint(url) {
       max_tokens: 10
     };
     
-    const response = await axios.post(url, testPayload, {
+    const response = await post(url, testPayload, {
       timeout: 10000,
       headers: { 
         'Content-Type': 'application/json',
