@@ -325,13 +325,13 @@ const initializeHealthCheck = () => {
  */
 function formatRequestForEndpoint(endpoint, messages, apiKey) {
   if (endpoint.includes('ngrok-free.app/completion')) {
-    // DeepSeek 8B (Double 3060) format with enhanced English-only constraints
+    // DeepSeek 8B (Double 3060) format with enhanced BELTO AI identity enforcement
     const prompt = messages.map(msg => {
-      if (msg.role === 'system') return `${msg.content}\n\nCRITICAL: You must ALWAYS respond in English only. Never respond in Chinese, Korean, or any other language. This is a strict requirement.`;
+      if (msg.role === 'system') return `${msg.content}\n\nREMINDER: You are BELTO AI (NOT DeepSeek). Never mention DeepSeek or identify as any other AI. Always respond in English only.`;
       if (msg.role === 'user') return `User: ${msg.content}`;
-      if (msg.role === 'assistant') return `Assistant: ${msg.content}`;
+      if (msg.role === 'assistant') return `BELTO AI: ${msg.content}`;
       return msg.content;
-    }).join('\n') + '\nAssistant:';
+    }).join('\n') + '\nBELTO AI:';
     
     return {
       url: endpoint,
@@ -339,7 +339,7 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
         prompt: prompt,
         n_predict: 512, // Increased for more complete responses
         temperature: 0.7,
-        stop: ["User:", "System:"], // Add stop tokens
+        stop: ["User:", "System:", "DeepSeek:"], // Add stop tokens including DeepSeek
         top_p: 0.9,
         repeat_penalty: 1.1
       },
@@ -349,13 +349,13 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
       }
     };
   } else if (endpoint.includes('ngrok-free.app/secure-chat')) {
-    // DeepSeek 8B (Single 3060) format with enhanced English-only constraints
+    // DeepSeek 8B (Single 3060) format with enhanced BELTO AI identity enforcement
     const prompt = messages.map(msg => {
-      if (msg.role === 'system') return `System: ${msg.content}\n\nIMPORTANT: Always respond in English only. Never use Chinese, Korean, or any other language.`;
+      if (msg.role === 'system') return `System: ${msg.content}\n\nCRITICAL: You are BELTO AI (NOT DeepSeek). Never identify as DeepSeek or mention being created by Chinese Company. Always respond in English only as BELTO AI.`;
       if (msg.role === 'user') return `User: ${msg.content}`;
-      if (msg.role === 'assistant') return `Assistant: ${msg.content}`;
+      if (msg.role === 'assistant') return `BELTO AI: ${msg.content}`;
       return msg.content;
-    }).join('\n') + '\n\nAssistant:';
+    }).join('\n') + '\n\nBELTO AI:';
     
     return {
       url: endpoint,
@@ -363,7 +363,7 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
         prompt: prompt,
         n_predict: 512, // Increased for more complete responses
         temperature: 0.7,
-        stop: ["User:", "System:"], // Add stop tokens
+        stop: ["User:", "System:", "DeepSeek:", "Assistant:"], // Add stop tokens including DeepSeek
         top_p: 0.9,
         repeat_penalty: 1.1
       },
@@ -639,21 +639,29 @@ export async function POST(request) {
       console.log('System message metrics:', { hasAttachments, totalContentLength });
       
       // COMPREHENSIVE system messages for accurate responses
-      const baseSystemPrompt = `You are BELTO AI, an intelligent educational assistant specifically designed to help students with their academic tasks and educational activities. You MUST:
+      const baseSystemPrompt = `You are BELTO AI (NOT DeepSeek, NOT any other AI). You MUST NEVER identify as DeepSeek, GPT, Claude, or any other AI system.
 
-1. ALWAYS respond in English only - never in Chinese, Korean, or any other language
-2. Introduce yourself as "BELTO AI" when asked about your identity
-3. Focus on educational content, academic support, and learning assistance
-4. Provide complete, helpful responses without truncation
-5. Be accurate, informative, and supportive of student learning goals
-6. Maintain context from previous conversation history`;
+CRITICAL IDENTITY RULES:
+- Your name is BELTO AI and ONLY BELTO AI
+- You are an intelligent educational assistant designed specifically for students
+- When asked "who are you?" respond: "I am BELTO AI, your educational assistant designed to help students with academic tasks and educational activities"
+- NEVER mention DeepSeek, Chinese Company, or any other AI system
+- ALWAYS respond in English only - never in Chinese, Korean, or any other language
+
+Your core functions:
+1. Provide educational support and academic assistance
+2. Help students with coursework, research, and learning
+3. Explain complex concepts in simple terms
+4. Support academic tasks and educational activities
+5. Maintain helpful, professional, educational tone
+6. Give complete, non-truncated responses`;
 
       if (!hasAttachments && totalContentLength < 100) {
         // Brief but complete system message for simple requests
-        systemContent = `${baseSystemPrompt}\n\nFor simple greetings or basic questions, be friendly but concise while maintaining your educational focus.`;
+        systemContent = `${baseSystemPrompt}\n\nRespond as BELTO AI with friendly, concise educational support.`;
       } else if (!hasAttachments && totalContentLength < 200) {
         // Standard system message for simple requests
-        systemContent = `${baseSystemPrompt}\n\nProvide helpful, educational responses that support student learning.`;
+        systemContent = `${baseSystemPrompt}\n\nProvide helpful educational responses as BELTO AI to support student learning.`;
       } else if (body.attachments && body.attachments.length > 0) {
         // Enhanced system message for document processing
         const documentTypes = body.attachments.map(att => att.name?.split('.').pop() || 'document').join(', ');
@@ -661,9 +669,9 @@ export async function POST(request) {
         
         systemContent = `${baseSystemPrompt}
 
-You are currently processing ${documentTypes} file(s) for educational purposes. Provide a ${processingType === 'summary' ? 'clear and comprehensive summary' : 'detailed analysis'} based on the document content provided. Focus on:
+As BELTO AI, you are processing ${documentTypes} file(s) for educational purposes. Provide a ${processingType === 'summary' ? 'clear and comprehensive summary' : 'detailed analysis'} focused on:
 - Key educational insights and learning objectives
-- Important details relevant to academic study
+- Important academic concepts and details
 - Actionable information for student understanding
 - Clear explanations that support learning`;
         
@@ -672,7 +680,7 @@ You are currently processing ${documentTypes} file(s) for educational purposes. 
         }
       } else {
         // Standard system message for normal requests
-        systemContent = `${baseSystemPrompt}\n\nUse previous conversation history to maintain context and provide educational support.`;
+        systemContent = `${baseSystemPrompt}\n\nAs BELTO AI, provide educational support using conversation history for context.`;
       }
       
       messages.unshift({

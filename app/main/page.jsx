@@ -392,7 +392,6 @@ Your purpose is to support student learning through clear explanations, academic
 
         <LoadingOverlay
           isVisible={isMessageSending || isProcessing}
-          message={isMessageSending ? 'Generating response...' : 'Processing...'}
         />
       </div>
     </>
