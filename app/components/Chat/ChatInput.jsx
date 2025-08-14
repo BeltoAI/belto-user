@@ -92,7 +92,9 @@ const ChatInput = ({
   }, [userId]);
 
   const handleInputChange = (e) => {
-    setCurrentInput(e.target.value);
+    const newValue = e.target.value;
+    setCurrentInput(newValue);
+    
     // Reset flagging state when input changes
     if (isFlagged) {
       setIsFlagged(false);
@@ -100,11 +102,7 @@ const ChatInput = ({
     }
   };
 
-  const handleRemoveFile = () => {
-    setCurrentAttachment(null);
-  };
-
-  // Handle paste event
+  // Simplified paste handler to improve typing experience
   const handlePaste = (e) => {
     if (!allowCopyPaste) {
       e.preventDefault();
@@ -127,6 +125,11 @@ const ChatInput = ({
       
       return false;
     }
+    // Allow normal paste behavior for better typing experience
+  };
+
+  const handleRemoveFile = () => {
+    setCurrentAttachment(null);
   };
 
   // Simple keyword check for potentially problematic content
@@ -394,7 +397,7 @@ const ChatInput = ({
             type="text" 
             value={currentInput} 
             onChange={handleInputChange}
-            onPaste={handlePaste} // Add paste event handler
+            onPaste={handlePaste}
             placeholder={
               limitReached ? 
                 limitType === 'token' ?
@@ -402,10 +405,12 @@ const ChatInput = ({
                   `Message limit reached (${messageLimit} messages)` 
                 : isGenerating ? "Belto is thinking..." : "Type your message..."
             } 
-            className={`w-full bg-transparent border-none focus:outline-none text-white ${
+            className={`w-full bg-transparent border-none focus:outline-none text-white placeholder-gray-400 ${
               limitReached ? 'opacity-50 cursor-not-allowed' : ''
             } ${isGenerating ? 'pr-20' : ''}`}
-            disabled={isGenerating || limitReached} 
+            disabled={isGenerating || limitReached}
+            autoComplete="off"
+            spellCheck="false"
           />
           {isGenerating && (
             <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center space-x-1">

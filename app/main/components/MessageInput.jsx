@@ -82,11 +82,13 @@ const MessageInput = ({
                 ? "Type your prompt here..." 
                 : "Select a chat session to start messaging"
           }
-          className="flex-1 bg-transparent border-none focus:outline-none text-white px-4"
+          className="flex-1 bg-transparent border-none focus:outline-none text-white placeholder-gray-400 px-4"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={enhancedKeyDown}
           disabled={!currentSessionId || isMessageSending}
+          autoComplete="off"
+          spellCheck="false"
         />
         
         <button

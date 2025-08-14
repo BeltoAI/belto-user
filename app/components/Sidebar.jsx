@@ -231,11 +231,39 @@ const Sidebar = () => {
 
     const lectureSession = lectureSessions[lectureId];
     if (!lectureSession?.session?._id) {
-      toast.error('No valid session found for this lecture');
-      return;
+      console.error('No valid session found for lecture:', lectureId, lectureSession);
+      toast.error('Creating new session for this lecture...');
+      
+      try {
+        // Create a new session if one doesn't exist
+        const lectureTitle = lectureDetails[lectureId]?.title || `Lecture ${lectureId}`;
+        const newSession = await createSessionForLecture(user._id, lectureId, lectureTitle);
+        
+        // Update the lectureSessions state
+        setLectureSessions(prev => ({
+          ...prev,
+          [lectureId]: {
+            session: newSession,
+            loading: false,
+            error: null
+          }
+        }));
+        
+        // Load the new session
+        await loadSession(newSession._id);
+        setIsOpen(false);
+        toast.success(`Switched to ${lectureTitle}`);
+        return;
+      } catch (error) {
+        console.error('Failed to create new session:', error);
+        toast.error('Failed to create session for this lecture');
+        return;
+      }
     }
 
     try {
+      console.log('Switching to lecture:', lectureId, 'with session:', lectureSession.session._id);
+      
       // Show a loading state for this lecture's button.
       setLectureSessions(prev => ({
         ...prev,
@@ -244,7 +272,12 @@ const Sidebar = () => {
 
       // Load the session using the store action
       await loadSession(lectureSession.session._id);
+      
+      // Get lecture title for confirmation
+      const lectureTitle = lectureDetails[lectureId]?.title || `Lecture ${lectureId}`;
+      
       setIsOpen(false); // Close sidebar on selection
+      toast.success(`Switched to ${lectureTitle}`);
     } catch (err) {
       console.error('Failed to load session:', err);
       toast.error('Failed to load chat session');
