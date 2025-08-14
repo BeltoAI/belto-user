@@ -336,36 +336,100 @@ export const useAIResponse = () => {
         };
       }
       
-      // Standard error responses for non-document requests
+      // Standard error responses for non-document requests with educational focus
       if (errorMessage.includes('Could not connect to AI service') || errorMessage.includes('503')) {
         // Check if this was a request with attachments
         if (attachments && attachments.length > 0) {
           const fileSize = attachments[0].content?.length || 0;
           if (fileSize > 10000) {
-            fallbackResponse = "📄 Your document is quite large and I'm having trouble processing it right now. Please try asking specific questions about the document instead of requesting a full analysis, or try again in a moment.";
+            fallbackResponse = `Hello! I'm BELTO AI, your educational assistant. 📄 I'm having some trouble processing your large document right now due to connectivity issues. 
+
+**Here's how I can still help you**:
+• Ask specific questions about sections of your document
+• Request summaries of particular topics or chapters
+• Get explanations of key concepts within the material  
+• Break down complex topics into simpler explanations
+
+Please try asking about a specific part of your document, or try again in a moment when my full processing capabilities are restored!`;
           } else {
-            fallbackResponse = "📄 I'm having trouble processing your document right now. Please try asking specific questions about the content or try again in a moment.";
+            fallbackResponse = `Hello! I'm BELTO AI, your educational assistant. 📄 I'm experiencing some connectivity issues while processing your document, but I'm designed to help you with your academic needs.
+
+**Try these approaches**:
+• Ask specific questions about the document content
+• Request explanations of particular concepts
+• Ask for summaries of specific sections
+
+I'll do my best to assist you with your educational tasks once connectivity is restored!`;
           }
         } else {
-          fallbackResponse = "🔧 I'm experiencing connectivity issues with the AI service. The system is working to restore connection. Please try again in a moment.";
+          fallbackResponse = `Hello! I'm BELTO AI, your dedicated educational assistant designed to help students with their academic tasks and educational activities.
+
+🎓 **I'm here to help you with**:
+• Academic questions and coursework support
+• Explaining complex concepts in simple terms
+• Study guidance and learning assistance  
+• Research and analysis support
+• Educational content review
+
+I'm currently experiencing some connectivity issues, but please try your question again in a moment. I'm committed to supporting your learning journey!`;
         }
       } else if (errorMessage.includes('timeout') || errorMessage.includes('ECONNABORTED')) {
         if (attachments && attachments.length > 0) {
           const fileSize = attachments[0].content?.length || 0;
           if (fileSize > 15000) {
-            fallbackResponse = "⏱️ Your document is very large and taking longer than expected to process. Please try asking specific questions about the document instead of requesting a full summary, or upload a smaller document.";
+            fallbackResponse = `Hello! I'm BELTO AI, your educational assistant. ⏱️ Your document is quite large and taking longer than expected to process. 
+
+**For faster results, try**:
+• Asking specific questions about document sections
+• Requesting summaries of particular topics
+• Breaking your request into smaller parts
+• Uploading smaller document sections
+
+I'm designed to help with your academic needs, so please try a more focused request or wait a moment for full processing capability!`;
           } else {
-            fallbackResponse = "⏱️ Your document is taking longer than expected to process. Please try with specific questions about the content or wait a moment before trying again.";
+            fallbackResponse = `Hello! I'm BELTO AI, your educational assistant. ⏱️ Your document is taking longer than expected to process due to system load.
+
+**Quick alternatives**:
+• Ask specific questions about the content
+• Request explanations of key concepts
+• Try asking about particular sections
+
+I'm here to support your learning, so please try again with a more specific question or wait a moment!`;
           }
         } else {
-          fallbackResponse = "⏱️ The AI service is taking longer than expected. Please try again with a shorter message or wait a moment.";
+          fallbackResponse = `Hello! I'm BELTO AI, your educational assistant. ⏱️ I'm taking longer than expected to respond due to high system demand.
+
+I'm designed specifically to help students with academic tasks and educational activities. Please try again with your question in a moment, and I'll be ready to support your learning!`;
         }
       } else if (errorMessage.includes('500')) {
-        fallbackResponse = "🔧 The AI service encountered an internal error. Please try again in a moment.";
+        fallbackResponse = `Hello! I'm BELTO AI, your educational assistant. 🔧 I'm experiencing some internal system issues, but I'm designed to help you with your academic tasks and educational activities.
+
+**While I work on resolving this**:
+• Please try your question again in a moment
+• Consider rephrasing your request
+• Break complex questions into simpler parts
+
+I'm committed to supporting your learning journey, so please don't hesitate to try again!`;
       } else if (errorMessage.includes('429')) {
-        fallbackResponse = "🚦 The AI service is currently busy. Please wait a moment and try again.";
+        fallbackResponse = `Hello! I'm BELTO AI, your educational assistant. 🚦 I'm currently experiencing high demand for my educational support services.
+
+**Please try again in a moment** - I'm designed specifically to help students with:
+• Academic questions and coursework
+• Concept explanations and study guidance  
+• Educational content analysis
+• Learning support and research assistance
+
+Your education is important, so I'll be ready to help shortly!`;
       } else {
-        fallbackResponse = `⚠️ I'm having trouble generating a response right now. Please try again.`;
+        fallbackResponse = `Hello! I'm BELTO AI, your dedicated educational assistant. ⚠️ I'm experiencing some technical difficulties right now, but I'm designed to help students with their academic tasks and educational activities.
+
+**I'm here to support your learning with**:
+• Academic questions and explanations
+• Study guidance and research help
+• Educational content analysis
+• Concept clarification and learning support
+
+Please try your question again in a moment - I'm committed to helping you succeed in your studies!`;
       }
       
       return {

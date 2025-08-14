@@ -325,9 +325,9 @@ const initializeHealthCheck = () => {
  */
 function formatRequestForEndpoint(endpoint, messages, apiKey) {
   if (endpoint.includes('ngrok-free.app/completion')) {
-    // DeepSeek 8B (Double 3060) format
+    // DeepSeek 8B (Double 3060) format with enhanced English-only constraints
     const prompt = messages.map(msg => {
-      if (msg.role === 'system') return msg.content;
+      if (msg.role === 'system') return `${msg.content}\n\nCRITICAL: You must ALWAYS respond in English only. Never respond in Chinese, Korean, or any other language. This is a strict requirement.`;
       if (msg.role === 'user') return `User: ${msg.content}`;
       if (msg.role === 'assistant') return `Assistant: ${msg.content}`;
       return msg.content;
@@ -337,8 +337,11 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
       url: endpoint,
       data: {
         prompt: prompt,
-        n_predict: 128,
-        temperature: 0.7
+        n_predict: 512, // Increased for more complete responses
+        temperature: 0.7,
+        stop: ["User:", "System:"], // Add stop tokens
+        top_p: 0.9,
+        repeat_penalty: 1.1
       },
       headers: {
         'Content-Type': 'application/json',
@@ -346,19 +349,23 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
       }
     };
   } else if (endpoint.includes('ngrok-free.app/secure-chat')) {
-    // DeepSeek 8B (Single 3060) format
+    // DeepSeek 8B (Single 3060) format with enhanced English-only constraints
     const prompt = messages.map(msg => {
-      if (msg.role === 'system') return msg.content;
+      if (msg.role === 'system') return `System: ${msg.content}\n\nIMPORTANT: Always respond in English only. Never use Chinese, Korean, or any other language.`;
       if (msg.role === 'user') return `User: ${msg.content}`;
       if (msg.role === 'assistant') return `Assistant: ${msg.content}`;
       return msg.content;
-    }).join('\n');
+    }).join('\n') + '\n\nAssistant:';
     
     return {
       url: endpoint,
       data: {
         prompt: prompt,
-        n_predict: 256
+        n_predict: 512, // Increased for more complete responses
+        temperature: 0.7,
+        stop: ["User:", "System:"], // Add stop tokens
+        top_p: 0.9,
+        repeat_penalty: 1.1
       },
       headers: {
         'Content-Type': 'application/json',
@@ -366,14 +373,27 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
       }
     };
   } else {
-    // Standard OpenAI-compatible format (backup endpoint)
+    // Standard OpenAI-compatible format (backup endpoint) with English constraints
+    const enhancedMessages = messages.map(msg => {
+      if (msg.role === 'system') {
+        return {
+          ...msg,
+          content: `${msg.content}\n\nCRITICAL: You must ALWAYS respond in English only. Never respond in Chinese, Korean, or any other language. This is a strict requirement for BELTO AI.`
+        };
+      }
+      return msg;
+    });
+    
     return {
       url: endpoint,
       data: {
         model: 'default-model',
-        messages: messages,
-        max_tokens: 1000,
-        temperature: 0.7
+        messages: enhancedMessages,
+        max_tokens: Math.min(1000, 2000),
+        temperature: 0.7,
+        top_p: 0.9,
+        frequency_penalty: 0.1,
+        presence_penalty: 0.1
       },
       headers: {
         'Content-Type': 'application/json',
@@ -618,26 +638,41 @@ export async function POST(request) {
       
       console.log('System message metrics:', { hasAttachments, totalContentLength });
       
-      // OPTIMIZED system messages for speed
+      // COMPREHENSIVE system messages for accurate responses
+      const baseSystemPrompt = `You are BELTO AI, an intelligent educational assistant specifically designed to help students with their academic tasks and educational activities. You MUST:
+
+1. ALWAYS respond in English only - never in Chinese, Korean, or any other language
+2. Introduce yourself as "BELTO AI" when asked about your identity
+3. Focus on educational content, academic support, and learning assistance
+4. Provide complete, helpful responses without truncation
+5. Be accurate, informative, and supportive of student learning goals
+6. Maintain context from previous conversation history`;
+
       if (!hasAttachments && totalContentLength < 100) {
-        // Ultra-short system message for very simple requests like "hi"
-        systemContent = 'You are BELTO. Be very brief.';
+        // Brief but complete system message for simple requests
+        systemContent = `${baseSystemPrompt}\n\nFor simple greetings or basic questions, be friendly but concise while maintaining your educational focus.`;
       } else if (!hasAttachments && totalContentLength < 200) {
-        // Ultra-short system message for simple requests
-        systemContent = 'You are BELTO, a helpful AI assistant. Be concise.';
+        // Standard system message for simple requests
+        systemContent = `${baseSystemPrompt}\n\nProvide helpful, educational responses that support student learning.`;
       } else if (body.attachments && body.attachments.length > 0) {
         // Enhanced system message for document processing
         const documentTypes = body.attachments.map(att => att.name?.split('.').pop() || 'document').join(', ');
         const processingType = body.processingHints?.analysisType || 'analysis';
         
-        systemContent = `You are BELTO, a helpful AI assistant. Use previous conversation history to maintain context. You are currently processing ${documentTypes} file(s). Provide a ${processingType === 'summary' ? 'clear and comprehensive summary' : 'detailed analysis'} based on the document content provided. Focus on key insights, important details, and actionable information.`;
+        systemContent = `${baseSystemPrompt}
+
+You are currently processing ${documentTypes} file(s) for educational purposes. Provide a ${processingType === 'summary' ? 'clear and comprehensive summary' : 'detailed analysis'} based on the document content provided. Focus on:
+- Key educational insights and learning objectives
+- Important details relevant to academic study
+- Actionable information for student understanding
+- Clear explanations that support learning`;
         
         if (body.processingHints?.documentType === 'pdf') {
-          systemContent += ' When analyzing PDF content, pay special attention to document structure, headings, and key sections.';
+          systemContent += '\n- Pay special attention to document structure, headings, and key sections for academic organization';
         }
       } else {
         // Standard system message for normal requests
-        systemContent = 'You are BELTO, a helpful AI assistant. Use previous conversation history to maintain context.';
+        systemContent = `${baseSystemPrompt}\n\nUse previous conversation history to maintain context and provide educational support.`;
       }
       
       messages.unshift({
@@ -676,34 +711,35 @@ export async function POST(request) {
     // Determine appropriate timeout based on request complexity
     const requestTimeout = getTimeoutForRequest(body, optimizedMessages);
 
-    // Determine appropriate token limit based on request complexity - SPEED OPTIMIZED
-    let maxTokens = 300; // Default for complex requests
+    // Determine appropriate token limit based on request complexity - EDUCATIONAL FOCUS
+    let maxTokens = 500; // Increased default for complete responses
     const totalContentLength = optimizedMessages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
     const hasAttachments = body.attachments && body.attachments.length > 0;
-    // ULTRA-FAST TRACK: Extremely low token limits for very simple messages
+    
+    // EDUCATIONAL RESPONSE OPTIMIZATION: Ensure complete, helpful responses
     if (!hasAttachments && totalContentLength < 100) {
-      maxTokens = 20;
-      console.log(`🚀 Using ULTRA-FAST token limit (${maxTokens}) for very simple message`);
+      maxTokens = 150; // Increased for complete basic responses
+      console.log(`� Using basic educational token limit (${maxTokens}) for simple message`);
     } else if (!hasAttachments && totalContentLength < 200) {
-      maxTokens = 30;
-      console.log(`⚡ Using ULTRA-FAST token limit (${maxTokens}) for simple message`);
+      maxTokens = 250; // Increased for comprehensive responses
+      console.log(`📚 Using standard educational token limit (${maxTokens}) for simple message`);
     } else if (!hasAttachments && totalContentLength < 500) {
-      maxTokens = 80;
-      console.log(`🚀 Using optimized token limit (${maxTokens}) for basic request`);
+      maxTokens = 400; // Increased for detailed explanations
+      console.log(`� Using enhanced educational token limit (${maxTokens}) for basic request`);
     } else if (!hasAttachments && totalContentLength < 1000) {
-      maxTokens = 120;
-      console.log(`📝 Using standard token limit (${maxTokens}) for normal request`);
+      maxTokens = 600; // Increased for comprehensive responses
+      console.log(`📝 Using comprehensive token limit (${maxTokens}) for normal request`);
     } else if (hasAttachments) {
-      // ADAPTIVE: For document/large requests, scale token limit with size
+      // EDUCATIONAL DOCUMENT PROCESSING: Scale appropriately for academic content
       const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
       if (docSize > 100000) {
-        maxTokens = 1200;
+        maxTokens = 2000; // Increased for comprehensive document analysis
       } else if (docSize > 50000) {
-        maxTokens = 800;
+        maxTokens = 1500; // Increased for detailed document analysis
       } else if (docSize > 20000) {
-        maxTokens = 600;
+        maxTokens = 1000; // Increased for comprehensive analysis
       } else {
-        maxTokens = 400;
+        maxTokens = 800; // Increased for thorough document understanding
       }
       console.log(`📄 Using adaptive token limit (${maxTokens}) for document request`);
     }
@@ -929,7 +965,7 @@ export async function POST(request) {
       });
       // If fallback is enabled and all endpoints failed, provide a helpful response
       if (ENABLE_FALLBACK_RESPONSES) {
-        console.log('🔄 Triggering fallback response due to connection errors');
+        console.log('🔄 Triggering educational fallback response due to connection errors');
         console.log('Fallback trigger details:', {
           hasAttachments,
           contentLength: body.attachments?.[0]?.content?.length || 0,
@@ -940,23 +976,49 @@ export async function POST(request) {
         });
         
         if (hasAttachments && body.attachments[0].content) {
-          // For document requests, return a progress/fallback message
+          // For document requests, return educational fallback
           return NextResponse.json({
-            response: `📄 Your document is being processed but the AI service is taking longer than expected. Please try again in a few moments, or ask for a summary of a specific section to get a faster response.`,
-            tokenUsage: { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 },
+            response: `Hello! I'm BELTO AI, your educational assistant. I'm currently experiencing some connectivity issues while processing your document, but I'm here to help with your academic needs. 
+
+📄 **Your Document Upload**: I can see you've uploaded a document for analysis. While I work on restoring full connectivity, here are some ways I can assist you:
+
+• **Ask specific questions** about sections of your document
+• **Request summaries** of particular chapters or topics  
+• **Get explanations** of key concepts within the material
+• **Break down complex topics** into manageable parts
+
+💡 **Quick Tip**: Try asking something like "What are the main points in section 2?" or "Explain the key concepts in this document" for faster processing.
+
+I'm designed specifically to support your academic journey and educational activities. Please try your request again in a moment, or feel free to ask me about any specific part of your document!`,
+            tokenUsage: { total_tokens: 150, prompt_tokens: 50, completion_tokens: 100 },
             fallback: true,
             error: "Service temporarily slow or unavailable"
           });
         }
-        let fallbackMessage;
+        
+        // For simple messages, provide educational identity and help
+        let fallbackMessage = `Hello! I'm BELTO AI, your dedicated educational assistant designed to help students with their academic tasks and educational activities.
+
+🎓 **How I Can Help You**:
+• Answer questions about your coursework and studies
+• Explain complex academic concepts in simple terms  
+• Help with research and analysis
+• Provide study guidance and learning support
+• Assist with educational document review
+
+I'm currently experiencing some connectivity issues with my advanced processing systems, but I'm still here to support your learning journey!`;
+
         if (requestTimeout > BASE_TIMEOUT_MS) {
-          fallbackMessage = "I'm experiencing connectivity issues while processing your complex request. The AI service may be temporarily unavailable. Please try with a simpler question or wait a moment and try again.";
+          fallbackMessage += `\n\n⏱️ **Current Status**: Processing complex requests is taking longer than usual. For faster responses, try asking simpler questions or breaking your request into smaller parts.`;
         } else {
-          fallbackMessage = "I'm currently experiencing connectivity issues with my AI service. The endpoints may be temporarily unavailable. Please try again in a few moments, or contact support if this persists.";
+          fallbackMessage += `\n\n🔧 **Current Status**: My services are temporarily limited due to connectivity issues. Please try again in a few moments, and I'll be ready to help with your educational needs!`;
         }
+        
+        fallbackMessage += `\n\n💡 **Try asking me**: "Who are you?" or "How can you help me with my studies?" to learn more about my educational capabilities!`;
+        
         return NextResponse.json({
           response: fallbackMessage,
-          tokenUsage: { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 },
+          tokenUsage: { total_tokens: 120, prompt_tokens: 30, completion_tokens: 90 },
           fallback: true,
           error: "Service temporarily unavailable"
         });

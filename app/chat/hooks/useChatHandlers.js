@@ -232,23 +232,23 @@ export const useChatHandlers = (
         console.error('AI response generation failed:', aiResult.reason);
         
         // Create a more user-friendly error message based on error type
-        let errorMsg = 'I apologize, but I encountered an error generating a response.';
+        let errorMsg = `Hello! I'm BELTO AI, your educational assistant. I encountered an issue while generating my response, but I'm here to help you with your academic tasks and educational activities.`;
         const errorMessage = aiResult.reason.message || '';
         
         if (errorMessage.includes('503') || errorMessage.includes('Service Unavailable')) {
-          errorMsg = '🔧 The AI service is temporarily unavailable. Our team is working on it. Please try again in a moment.';
+          errorMsg = `🔧 Hello! I'm BELTO AI, your educational assistant. My services are temporarily experiencing high demand, but I'm designed specifically to help students with their academic needs. Our team is working to restore full capacity. Please try again in a moment!`;
         } else if (errorMessage.includes('timeout') || errorMessage.includes('ECONNABORTED')) {
-          errorMsg = '⏱️ The request timed out. The AI service might be experiencing high load. Please try again.';
+          errorMsg = `⏱️ Hello! I'm BELTO AI, your educational assistant. I'm taking longer than expected to process your request due to high system load. I'm designed to support your learning journey, so please try again with your academic question!`;
         } else if (errorMessage.includes('Could not connect')) {
-          errorMsg = '🌐 Unable to connect to the AI service. Please check your internet connection and try again.';
+          errorMsg = `🌐 Hello! I'm BELTO AI, your educational assistant. I'm having trouble connecting to my processing systems right now. As your dedicated academic support assistant, I'm committed to helping you with your studies. Please check your connection and try again!`;
         } else if (errorMessage.includes('401') || errorMessage.includes('unauthorized')) {
-          errorMsg = '🔑 Authentication error with the AI service. Please refresh the page or contact support if this persists.';
+          errorMsg = `🔑 Hello! I'm BELTO AI, your educational assistant. There's a temporary authentication issue with my services. I'm designed to help students with their academic tasks, so please refresh the page or contact support if this persists.`;
         } else {
-          errorMsg = '❌ An unexpected error occurred while generating the response. Please try again.';
+          errorMsg = `❌ Hello! I'm BELTO AI, your educational assistant. I encountered an unexpected error while processing your request. I'm specifically designed to help students with academic tasks and educational activities, so please try rephrasing your question.`;
         }
         
-        // Add a helpful suggestion
-        errorMsg += '\n\n💡 **Tip**: Try rephrasing your question or breaking it into smaller parts.';
+        // Add a helpful educational suggestion
+        errorMsg += `\n\n💡 **Academic Support Tip**: Try asking me specific questions about your studies, coursework, or educational materials. I'm here to support your learning journey!`;
         
         aiResponse = errorMsg;
         messageTokenUsage = { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
