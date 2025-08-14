@@ -250,14 +250,14 @@ const ChatMessage = ({
                 <button
                   onClick={onLike}
                   disabled={reactionPending}
-                  className={`p-1 hover:bg-[#262626] rounded-md ${liked ? 'text-blue-400' : 'text-gray-400'}`}
+                  className={`p-1 hover:bg-[#262626] rounded-md ${liked ? 'text-[#FFD700]' : 'text-gray-400'}`}
                 >
                   <ThumbsUp className="w-4 h-4" />
                 </button>
                 <button
                   onClick={onDislike}
                   disabled={reactionPending}
-                  className={`p-1 hover:bg-[#262626] rounded-md ${disliked ? 'text-red-400' : 'text-gray-400'}`}
+                  className={`p-1 hover:bg-[#262626] rounded-md ${disliked ? 'text-[#FFD700]' : 'text-gray-400'}`}
                 >
                   <ThumbsDown className="w-4 h-4" />
                 </button>

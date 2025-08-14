@@ -410,27 +410,80 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
  * @returns {Object} Normalized response
  */
 function parseResponseFromEndpoint(response, endpoint) {
+  let content = '';
+  let usage = {
+    total_tokens: 0,
+    prompt_tokens: 0,
+    completion_tokens: 0
+  };
+
   if (endpoint.includes('ngrok-free.app/completion') || endpoint.includes('ngrok-free.app/secure-chat')) {
     // DeepSeek format
-    return {
-      content: response.data.content || '',
-      usage: {
-        total_tokens: response.data.tokens_predicted || 0,
-        prompt_tokens: response.data.tokens_evaluated || 0,
-        completion_tokens: response.data.tokens_predicted || 0
-      }
+    content = response.data.content || '';
+    usage = {
+      total_tokens: response.data.tokens_predicted || 0,
+      prompt_tokens: response.data.tokens_evaluated || 0,
+      completion_tokens: response.data.tokens_predicted || 0
     };
   } else {
     // Standard OpenAI format
-    return {
-      content: response.data.choices?.[0]?.message?.content || '',
-      usage: response.data.usage || {
-        total_tokens: 0,
-        prompt_tokens: 0,
-        completion_tokens: 0
-      }
-    };
+    content = response.data.choices?.[0]?.message?.content || '';
+    usage = response.data.usage || usage;
   }
+
+  // Clean up response content to prevent unwanted additions
+  content = cleanResponseContent(content);
+
+  return {
+    content,
+    usage
+  };
+}
+
+/**
+ * Clean response content to remove unwanted patterns and ensure focused responses
+ * @param {string} content - The AI response content
+ * @returns {string} Cleaned content
+ */
+function cleanResponseContent(content) {
+  if (!content || typeof content !== 'string') {
+    return '';
+  }
+
+  // Remove common unwanted patterns that sometimes appear in responses
+  let cleanedContent = content
+    // Remove any mentions of being DeepSeek or other AI systems
+    .replace(/I am DeepSeek[^.]*\./gi, '')
+    .replace(/As DeepSeek[^,]*,?/gi, '')
+    .replace(/I'm DeepSeek[^.]*\./gi, '')
+    
+    // Remove unnecessary introductory phrases that add no value
+    .replace(/^(Sure,?\s*|Of course,?\s*|Certainly,?\s*|Absolutely,?\s*)+/gi, '')
+    
+    // Clean up multiple newlines and extra whitespace
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\s{3,}/g, ' ')
+    
+    // Remove trailing whitespace and normalize line endings
+    .trim();
+
+  // Check for and remove duplicate or repetitive content patterns
+  const lines = cleanedContent.split('\n');
+  const uniqueLines = [];
+  const seenContent = new Set();
+
+  for (const line of lines) {
+    const normalizedLine = line.trim().toLowerCase();
+    // Only add line if it's not a duplicate or very similar to previous content
+    if (normalizedLine.length > 0 && !seenContent.has(normalizedLine)) {
+      uniqueLines.push(line);
+      seenContent.add(normalizedLine);
+    }
+  }
+
+  cleanedContent = uniqueLines.join('\n');
+
+  return cleanedContent;
 }
 
 // Initialize on module load
@@ -648,13 +701,21 @@ CRITICAL IDENTITY RULES:
 - NEVER mention DeepSeek, Chinese Company, or any other AI system
 - ALWAYS respond in English only - never in Chinese, Korean, or any other language
 
+RESPONSE QUALITY RULES:
+- Answer ONLY the user's specific question - do not add unrelated information
+- Stop after answering the question completely - do not continue with additional topics
+- Do not generate follow-up questions unless specifically asked
+- Keep responses focused and relevant to the user's request
+- If providing code examples, only show the requested code without extra explanations unless asked
+
 Your core functions:
 1. Provide educational support and academic assistance
 2. Help students with coursework, research, and learning
 3. Explain complex concepts in simple terms
 4. Support academic tasks and educational activities
 5. Maintain helpful, professional, educational tone
-6. Give complete, non-truncated responses`;
+6. Give complete, non-truncated responses
+7. Stay focused on the user's specific request`;
 
       if (!hasAttachments && totalContentLength < 100) {
         // Brief but complete system message for simple requests
