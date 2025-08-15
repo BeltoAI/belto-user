@@ -460,6 +460,20 @@ function cleanResponseContent(content) {
     // Remove unnecessary introductory phrases that add no value
     .replace(/^(Sure,?\s*|Of course,?\s*|Certainly,?\s*|Absolutely,?\s*)+/gi, '')
     
+    // Fix code formatting issues - ensure proper line breaks in code blocks
+    .replace(/```(\w+)\s*([^`]+)```/g, (match, language, code) => {
+      // Clean up the code inside code blocks
+      const cleanCode = code
+        .replace(/;\s*(?=\w)/g, ';\n    ') // Add line breaks after semicolons
+        .replace(/{\s*(?=\w)/g, '{\n    ') // Add line breaks after opening braces
+        .replace(/}\s*(?=\w)/g, '}\n    ') // Add line breaks after closing braces
+        .replace(/:\s*(?=\w)/g, ':\n        ') // Add line breaks after colons in functions
+        .replace(/\s+/g, ' ') // Normalize whitespace
+        .trim();
+      
+      return `\`\`\`${language}\n${cleanCode}\n\`\`\``;
+    })
+    
     // Clean up multiple newlines and extra whitespace
     .replace(/\n{3,}/g, '\n\n')
     .replace(/\s{3,}/g, ' ')
@@ -706,7 +720,10 @@ RESPONSE QUALITY RULES:
 - Stop after answering the question completely - do not continue with additional topics
 - Do not generate follow-up questions unless specifically asked
 - Keep responses focused and relevant to the user's request
-- If providing code examples, only show the requested code without extra explanations unless asked
+- When providing code examples, format them properly with line breaks and proper indentation
+- Use proper markdown formatting for code blocks with language syntax
+- Each line of code should be on a separate line for readability
+- Maintain proper code structure and formatting conventions
 
 Your core functions:
 1. Provide educational support and academic assistance

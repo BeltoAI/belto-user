@@ -403,23 +403,15 @@ const ChatInput = ({
                 limitType === 'token' ?
                   `Token limit reached (${tokenLimit} tokens)` : 
                   `Message limit reached (${messageLimit} messages)` 
-                : isGenerating ? "Belto is thinking..." : "Type your message..."
+                : isGenerating ? "" : "Type your message..."
             } 
             className={`w-full bg-transparent border-none focus:outline-none text-white placeholder-gray-400 ${
-              limitReached ? 'opacity-50 cursor-not-allowed' : ''
-            } ${isGenerating ? 'pr-20' : ''}`}
+              limitReached || isGenerating ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
             disabled={isGenerating || limitReached}
             autoComplete="off"
             spellCheck="false"
           />
-          {isGenerating && (
-            <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center space-x-1">
-              <div className="w-1.5 h-1.5 bg-[#FFB800] rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
-              <div className="w-1.5 h-1.5 bg-[#FFB800] rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-              <div className="w-1.5 h-1.5 bg-[#FFB800] rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
-              <span className="text-xs text-[#FFB800] ml-2">Processing</span>
-            </div>
-          )}
         </div>
         <button 
           type="submit" 
