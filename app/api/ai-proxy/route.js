@@ -463,12 +463,30 @@ function cleanResponseContent(content) {
     // Fix code formatting issues - ensure proper line breaks in code blocks
     .replace(/```(\w+)\s*([^`]+)```/g, (match, language, code) => {
       // Clean up the code inside code blocks
-      const cleanCode = code
-        .replace(/;\s*(?=\w)/g, ';\n    ') // Add line breaks after semicolons
-        .replace(/{\s*(?=\w)/g, '{\n    ') // Add line breaks after opening braces
-        .replace(/}\s*(?=\w)/g, '}\n    ') // Add line breaks after closing braces
-        .replace(/:\s*(?=\w)/g, ':\n        ') // Add line breaks after colons in functions
-        .replace(/\s+/g, ' ') // Normalize whitespace
+      let cleanCode = code
+        // Fix common single-line formatting issues
+        .replace(/def\s+(\w+)\([^)]*\):\s*([^#\n]+)/g, (match, funcName, funcBody) => {
+          // Python function formatting
+          const formatted = funcBody
+            .replace(/;\s*/g, '\n    ')
+            .replace(/return\s+/g, '\n    return ')
+            .replace(/if\s+/g, '\n    if ')
+            .replace(/else:\s*/g, '\n    else:\n        ');
+          return `def ${funcName}(${match.match(/\([^)]*\)/)[0]}:\n    ${formatted}`;
+        })
+        // Fix Java/C++ style functions
+        .replace(/(\w+\s+\w+\([^)]*\)\s*{[^}]+})/g, (match) => {
+          return match
+            .replace(/{/g, '{\n    ')
+            .replace(/;(?!\s*})/g, ';\n    ')
+            .replace(/}/g, '\n}');
+        })
+        // Fix general statement separation
+        .replace(/;\s*(?=\w)/g, ';\n    ')
+        .replace(/{\s*(?=\w)/g, '{\n    ')
+        .replace(/}\s*(?=\w)/g, '}\n    ')
+        // Clean up extra whitespace
+        .replace(/\s+/g, ' ')
         .trim();
       
       return `\`\`\`${language}\n${cleanCode}\n\`\`\``;
@@ -720,10 +738,11 @@ RESPONSE QUALITY RULES:
 - Stop after answering the question completely - do not continue with additional topics
 - Do not generate follow-up questions unless specifically asked
 - Keep responses focused and relevant to the user's request
-- When providing code examples, format them properly with line breaks and proper indentation
-- Use proper markdown formatting for code blocks with language syntax
-- Each line of code should be on a separate line for readability
-- Maintain proper code structure and formatting conventions
+- When providing code examples, ALWAYS format them with proper line breaks
+- Put each statement on a separate line with proper indentation
+- Use proper markdown code blocks with language specification
+- Never put multiple lines of code on a single line
+- Ensure readable, well-formatted code structure
 
 Your core functions:
 1. Provide educational support and academic assistance
@@ -836,6 +855,7 @@ As BELTO AI, you are processing ${documentTypes} file(s) for educational purpose
       messages: optimizedMessages,
       temperature: body.aiConfig?.temperature || body.preferences?.temperature || 0.7,
       max_tokens: Math.min(body.aiConfig?.maxTokens || body.preferences?.maxTokens || maxTokens, maxTokens),
+      stream: body.aiConfig?.streaming || body.preferences?.streaming || false, // Add streaming support
     };
 
     console.log('Request payload structure:', Object.keys(aiRequestPayload));
