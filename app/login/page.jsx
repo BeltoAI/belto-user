@@ -32,9 +32,13 @@ export default function LoginPage() {
             console.log("NextAuth session authenticated, redirecting");
             setProcessingAuth(true);
             
+            // Get return URL from query params
+            const urlParams = new URLSearchParams(window.location.search);
+            const returnUrl = urlParams.get('returnUrl') || '/main';
+            
             // Sync with backend by creating a session for this Google user
             syncGoogleUser(session.user).then(() => {
-                router.push('/main');
+                router.push(returnUrl);
             }).catch(err => {
                 console.error("Error syncing Google user:", err);
                 toast.error("Authentication error. Please try again.");
@@ -144,7 +148,12 @@ export default function LoginPage() {
                 if (response.ok) {
                     toast.success('Login successful');
                     setProcessingAuth(true);
-                    router.push('/main');
+                    
+                    // Get return URL from query params
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const returnUrl = urlParams.get('returnUrl') || '/main';
+                    
+                    router.push(returnUrl);
                 } else {
                     setError(data.error || 'Login failed. Please try again.');
                     toast.error(data.error || 'Login failed. Please try again.');
@@ -171,9 +180,14 @@ export default function LoginPage() {
                 window.history.replaceState(null, '', newUrl);
             }
             
+            // Get return URL from current page URL params to preserve it
+            const urlParams = new URLSearchParams(window.location.search);
+            const returnUrl = urlParams.get('returnUrl');
+            const callbackUrl = returnUrl ? `/login?returnUrl=${encodeURIComponent(returnUrl)}` : '/login';
+            
             // Using signIn with specific configuration
             const result = await signIn(provider, {
-                callbackUrl: '/login', // Changed to /login to handle sync properly
+                callbackUrl: callbackUrl,
                 redirect: true
             });
             

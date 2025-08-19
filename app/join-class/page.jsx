@@ -14,6 +14,7 @@ const JoinClassPage = () => {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [leavingClass, setLeavingClass] = useState(null); // State for confirmation modal
+  const [codePreFilled, setCodePreFilled] = useState(false); // Track if code was pre-filled from URL
 
   useEffect(() => {
     const fetchUserAndClasses = async () => {
@@ -51,10 +52,32 @@ const JoinClassPage = () => {
       }
     };
 
+    // Check for enrollment code in URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const codeFromUrl = urlParams.get('code');
+    if (codeFromUrl) {
+      setClassCode(codeFromUrl);
+      setCodePreFilled(true);
+      toast.success('Enrollment code loaded! Click "Join Class" to continue.');
+      // Clean up URL parameters
+      if (window.history.replaceState) {
+        const newUrl = window.location.pathname;
+        window.history.replaceState(null, '', newUrl);
+      }
+    }
+
     fetchUserAndClasses();
     // Intentionally not including router in dependencies if its methods don't change
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleClassCodeChange = (e) => {
+    setClassCode(e.target.value);
+    // If user manually changes the code, remove the pre-filled indicator
+    if (codePreFilled) {
+      setCodePreFilled(false);
+    }
+  };
 
   const handleJoinClass = async () => {
     if (!classCode.trim()) {
@@ -195,6 +218,16 @@ const JoinClassPage = () => {
 
           {/* Join Class Form */}
           <div className="space-y-6 mb-10">
+            {codePreFilled && (
+              <div className="bg-green-900/20 border border-green-500/30 p-3 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <div className="text-green-400 text-sm">✓</div>
+                  <p className="text-green-300 text-sm">
+                    Enrollment code loaded from invitation link. Click "Join Class" to join!
+                  </p>
+                </div>
+              </div>
+            )}
             <div>
               <label htmlFor="classCode" className="text-sm font-medium text-gray-300 block mb-2">
                 Enter Class Code
@@ -204,8 +237,10 @@ const JoinClassPage = () => {
                 type="text"
                 placeholder="e.g., MATH101"
                 value={classCode}
-                onChange={(e) => setClassCode(e.target.value)} // Removed toUpperCase() to preserve case
-                className="w-full bg-[#2a2a2a] text-white p-3 rounded-lg border border-[#444444] focus:outline-none focus:ring-2 focus:ring-[#FFD700] focus:border-transparent placeholder-gray-500"
+                onChange={handleClassCodeChange}
+                className={`w-full bg-[#2a2a2a] text-white p-3 rounded-lg border ${
+                  codePreFilled ? 'border-green-500 focus:ring-green-500' : 'border-[#444444] focus:ring-[#FFD700]'
+                } focus:outline-none focus:ring-2 focus:border-transparent placeholder-gray-500`}
                 style={{ textTransform: 'none' }} // Ensure no text transformation occurs
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !loading) {
