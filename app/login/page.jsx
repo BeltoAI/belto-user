@@ -88,14 +88,21 @@ export default function LoginPage() {
                 let errorMessage = 'Authentication failed';
                 
                 // Map common NextAuth error codes to user-friendly messages
-                if (errorType === 'OAuthSignin') errorMessage = 'Error starting Google sign in';
-                if (errorType === 'OAuthCallback') errorMessage = 'Error during Google authentication';
-                if (errorType === 'OAuthAccountNotLinked') errorMessage = 'This email is already used with a different sign-in method';
-                if (errorType === 'Callback') errorMessage = 'Error during authentication callback';
-                if (errorType === 'AccessDenied') errorMessage = 'Access denied';
+                if (errorType === 'OAuthSignin') errorMessage = 'Error starting Google sign in. Please check your network connection.';
+                if (errorType === 'OAuthCallback') errorMessage = 'Google authentication callback failed. Please try again.';
+                if (errorType === 'OAuthAccountNotLinked') errorMessage = 'This email is already used with a different sign-in method. Please use the original method or contact support.';
+                if (errorType === 'Callback') errorMessage = 'Authentication callback error. This might be due to configuration issues.';
+                if (errorType === 'AccessDenied') errorMessage = 'Access denied by Google. You may have declined permission or your account is restricted.';
+                if (errorType === 'Configuration') errorMessage = 'Authentication configuration error. Please contact support.';
+                if (errorType === 'Signin') errorMessage = 'Sign in error occurred. Please try again or contact support.';
                 
                 toast.error(`Authentication error: ${errorMessage}`);
                 setError(errorMessage);
+                
+                // Log for debugging in development
+                if (process.env.NODE_ENV === 'development') {
+                    console.error('NextAuth Error:', errorType, errorMessage);
+                }
             }
             
             // Clear URL parameters after processing
@@ -158,17 +165,31 @@ export default function LoginPage() {
             setError('');
             console.log(`Starting ${provider} authentication...`);
             
+            // Clear any previous errors from the URL
+            if (typeof window !== 'undefined' && window.history.replaceState) {
+                const newUrl = window.location.pathname;
+                window.history.replaceState(null, '', newUrl);
+            }
+            
             // Using signIn with specific configuration
-            await signIn(provider, {
+            const result = await signIn(provider, {
                 callbackUrl: '/login', // Changed to /login to handle sync properly
                 redirect: true
             });
             
-            // Code below won't execute due to the redirect
+            // If there's an error in the result (shouldn't happen with redirect: true)
+            if (result?.error) {
+                console.error('SignIn result error:', result.error);
+                toast.error('Authentication failed. Please try again.');
+                setGoogleLoading(false);
+                setError('Authentication failed. Please try again.');
+            }
+            
         } catch (error) {
             console.error(`${provider} login error:`, error);
-            toast.error('An error occurred during login. Please try again.');
+            toast.error('An error occurred during login. Please check your internet connection and try again.');
             setGoogleLoading(false);
+            setError('Login failed. Please try again.');
         }
     };
 

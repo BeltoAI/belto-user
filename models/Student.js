@@ -13,7 +13,10 @@ const studentSchema = new mongoose.Schema({
     },
     password: {
         type: String,
-        required: true,
+        required: function() {
+            // Password is not required for Google OAuth users
+            return !this.googleAuth;
+        },
     },
     isVerified: {
         type: Boolean,
@@ -23,6 +26,19 @@ const studentSchema = new mongoose.Schema({
     emailVerificationExpires: Date,  // Changed from default: null
     resetPasswordToken: String,
     resetPasswordExpires: Date,
+    // Google OAuth fields
+    googleId: {
+        type: String,
+        default: null
+    },
+    googleAuth: {
+        type: Boolean,
+        default: false
+    },
+    picture: {
+        type: String,
+        default: null
+    },
     // Extended profile fields
     fullName: {
         type: String,
