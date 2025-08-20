@@ -40,10 +40,10 @@ const ClassSchema = new mongoose.Schema({
   },
   aiSettings: {
     model: {
-      type: String,
-      enum: ['Zypher 7B', 'Llama 3', 'GPT-3.5'],
-      default: 'Llama 3'
-    },
+          type: String,
+          enum: ['HERMES 3B', 'DEEPSEEK 8B DUAL', 'DEEPSEEK 8B SINGLE'],
+          default: 'HERMES 3B'
+        },
     copyPasteRestriction: {
       type: Boolean,
       default: false
