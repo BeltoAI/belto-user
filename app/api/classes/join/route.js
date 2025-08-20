@@ -39,17 +39,18 @@ export async function POST(request) {
     return NextResponse.json({
       message: 'Successfully joined the class',
       class: {
-        id: classDoc._id,
+        _id: classDoc._id,
         name: classDoc.name,
         description: classDoc.description,
         enrollmentCode: classDoc.enrollmentCode,
-        joinDate: new Date().toISOString()
+        startDate: classDoc.startDate, // Pass startDate for sorting
+        status: classDoc.status,
       }
     });
   } catch (error) {
-    console.error('Error joining class:', error);
+    console.error('Error in POST /api/classes/join:', error);
     return NextResponse.json(
-      { error: 'Failed to join class' },
+      { error: 'An internal server error occurred while trying to join the class.', details: error.message },
       { status: 500 }
     );
   }
