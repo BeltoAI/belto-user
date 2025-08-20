@@ -17,21 +17,33 @@ const JoinClassPage = () => {
   const [codePreFilled, setCodePreFilled] = useState(false); // Track if code was pre-filled from URL
 
   useEffect(() => {
-    const fetchUserAndClasses = async () => {
+    const handleEnrollmentFlow = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const codeFromUrl = urlParams.get('code');
+
       try {
         setIsLoading(true);
         const userResponse = await fetch('/api/auth/user');
+
         if (!userResponse.ok) {
-          if (userResponse.status === 401) {
-            toast.error('Session expired. Please login again.');
-            router.replace('/'); // Use replace to avoid adding to history
-            return;
+          // User is not authenticated
+          if (codeFromUrl) {
+            // If there's an enrollment code, redirect to login
+            toast.info('Please log in to join the class.');
+            const returnUrl = `/join-class?code=${encodeURIComponent(codeFromUrl)}`;
+            router.replace(`/login?returnUrl=${encodeURIComponent(returnUrl)}`);
+          } else {
+            // No code, and not logged in, send to main login
+            router.replace('/');
           }
-          throw new Error('Failed to fetch user data');
+          return; // Stop further execution
         }
+
+        // User is authenticated
         const userData = await userResponse.json();
         setUser(userData);
 
+        // Fetch joined classes
         const classesResponse = await fetch(`/api/classes/joined?studentId=${userData._id}`);
         if (classesResponse.ok) {
           const classesData = await classesResponse.json();
@@ -40,34 +52,28 @@ const JoinClassPage = () => {
           const errorData = await classesResponse.json();
           toast.error(errorData.error || 'Failed to fetch classes');
         }
-      } catch (error) {
-        console.error('Error fetching initial data:', error);
-        // Avoid redirecting if it's just a class fetch error, only on auth failure
-        if (error.message.includes('Not authenticated') || error.message.includes('Failed to fetch user data')) {
-           toast.error('Authentication failed. Please login again.');
-           router.replace('/'); // Use replace here as well
+
+        // If a code is in the URL, pre-fill it
+        if (codeFromUrl) {
+          setClassCode(codeFromUrl);
+          setCodePreFilled(true);
+          toast.success('Enrollment code loaded! Click "Join Class" to continue.');
+          // Clean up URL to avoid re-triggering
+          if (window.history.replaceState) {
+            const newUrl = window.location.pathname;
+            window.history.replaceState(null, '', newUrl);
+          }
         }
+      } catch (error) {
+        console.error('Error during enrollment flow:', error);
+        toast.error('An unexpected error occurred. Please try again.');
+        router.replace('/'); // Fallback redirect
       } finally {
         setIsLoading(false);
       }
     };
 
-    // Check for enrollment code in URL parameters
-    const urlParams = new URLSearchParams(window.location.search);
-    const codeFromUrl = urlParams.get('code');
-    if (codeFromUrl) {
-      setClassCode(codeFromUrl);
-      setCodePreFilled(true);
-      toast.success('Enrollment code loaded! Click "Join Class" to continue.');
-      // Clean up URL parameters
-      if (window.history.replaceState) {
-        const newUrl = window.location.pathname;
-        window.history.replaceState(null, '', newUrl);
-      }
-    }
-
-    fetchUserAndClasses();
-    // Intentionally not including router in dependencies if its methods don't change
+    handleEnrollmentFlow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -223,7 +229,7 @@ const JoinClassPage = () => {
                 <div className="flex items-center space-x-2">
                   <div className="text-green-400 text-sm">✓</div>
                   <p className="text-green-300 text-sm">
-                    Enrollment code loaded from invitation link. Click "Join Class" to join!
+                    Enrollment code loaded from invitation link. Click &quot;Join Class&quot; to join!
                   </p>
                 </div>
               </div>

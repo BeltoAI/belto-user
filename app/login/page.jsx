@@ -172,32 +172,24 @@ export default function LoginPage() {
         try {
             setGoogleLoading(true);
             setError('');
-            console.log(`Starting ${provider} authentication...`);
-            
-            // Clear any previous errors from the URL
-            if (typeof window !== 'undefined' && window.history.replaceState) {
-                const newUrl = window.location.pathname;
-                window.history.replaceState(null, '', newUrl);
-            }
             
             // Get return URL from current page URL params to preserve it
             const urlParams = new URLSearchParams(window.location.search);
             const returnUrl = urlParams.get('returnUrl');
-            const callbackUrl = returnUrl ? `/login?returnUrl=${encodeURIComponent(returnUrl)}` : '/login';
             
+            // Construct the callback URL. If there's a returnUrl, keep it for after the login.
+            // The final redirect will happen from the useEffect hook.
+            const callbackUrl = returnUrl 
+                ? `/login?returnUrl=${encodeURIComponent(returnUrl)}` 
+                : '/login';
+
+            console.log(`Starting ${provider} authentication with callback to: ${callbackUrl}`);
+
             // Using signIn with specific configuration
-            const result = await signIn(provider, {
+            await signIn(provider, {
                 callbackUrl: callbackUrl,
                 redirect: true
             });
-            
-            // If there's an error in the result (shouldn't happen with redirect: true)
-            if (result?.error) {
-                console.error('SignIn result error:', result.error);
-                toast.error('Authentication failed. Please try again.');
-                setGoogleLoading(false);
-                setError('Authentication failed. Please try again.');
-            }
             
         } catch (error) {
             console.error(`${provider} login error:`, error);
