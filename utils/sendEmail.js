@@ -13,7 +13,7 @@ const transporter = nodemailer.createTransport({
 export async function sendEmail(email, resetToken) {
     console.log('SendEmail - Preparing to send password reset email');
     
-    const resetLink = `https://belto.vercel.app/reset-password/${resetToken}`;
+    const resetLink = `https://belto-user-side.vercel.app/reset-password/${resetToken}`;
     console.log('SendEmail - Generated reset link:', resetLink);
     
     const mailOptions = {

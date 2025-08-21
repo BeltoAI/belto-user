@@ -12,7 +12,6 @@ export default withAuth(
       const allowedOrigins = [
         'https://belto-user-side.vercel.app',
         'http://localhost:3000',
-        'https://belto-mvpv3.vercel.app' // Legacy support
       ]
       
       const origin = req.headers.get('origin')
