@@ -20,24 +20,55 @@ import { atomDark } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 
 // Custom renderer for code blocks
 const CodeBlock = ({ language, value }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy code:', err);
+    }
+  };
+
   return (
-    <div className="relative group">
-      <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+    <div className="relative group my-4">
+      <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
         <button
-          onClick={() => navigator.clipboard.writeText(value)}
-          className="bg-[#363636] hover:bg-[#464646] text-xs px-2 py-1 rounded"
+          onClick={handleCopy}
+          className="bg-[#363636] hover:bg-[#464646] text-xs px-2 py-1 rounded text-white border border-[#555]"
         >
-          Copy
+          {copied ? 'Copied!' : 'Copy'}
         </button>
       </div>
+      {/* Language label */}
+      {language && (
+        <div className="absolute left-2 top-2 text-xs text-gray-400 opacity-70 z-10">
+          {language}
+        </div>
+      )}
       <SyntaxHighlighter
-        language={language || 'javascript'}
+        language={language || 'text'}
         style={atomDark}
         customStyle={{
-          margin: '1em 0',
-          borderRadius: '0.375rem',
-          backgroundColor: '#262626'
+          margin: '0',
+          borderRadius: '0.5rem',
+          backgroundColor: '#1a1a1a',
+          border: '1px solid #333',
+          fontSize: '0.875rem',
+          lineHeight: '1.5',
+          paddingTop: '2.5rem', // Add space for language label and copy button
         }}
+        showLineNumbers={value.split('\n').length > 5}
+        lineNumberStyle={{
+          color: '#666',
+          fontSize: '0.75rem',
+          minWidth: '2em',
+          paddingRight: '1em',
+        }}
+        wrapLines={true}
+        wrapLongLines={false}
       >
         {value}
       </SyntaxHighlighter>
@@ -66,6 +97,7 @@ const ChatMessage = ({
   limitType,
   tokenLimitWarning,
   isStreaming,
+  responseQuality, // Add response quality data
   index // Add index prop
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
@@ -95,6 +127,28 @@ const ChatMessage = ({
         <span className="text-sm text-red-200 font-medium">{warningMessage}</span>
       </div>
     );
+  };
+
+  // Render response quality indicator
+  const renderQualityIndicator = () => {
+    if (!isBot || !responseQuality) return null;
+
+    const { isTruncated, isComplete, confidence } = responseQuality;
+
+    // Show warning for low quality responses
+    if (isTruncated || (!isComplete && confidence < 60)) {
+      return (
+        <div className="mb-2 p-2 bg-orange-900/20 border border-orange-600/30 rounded text-xs text-orange-400">
+          <Info className="w-3 h-3 inline mr-1" />
+          {isTruncated 
+            ? "Response may be incomplete due to length limits" 
+            : "Response quality may be lower than usual"}
+          {confidence < 40 && " - Please try rephrasing your question for better results."}
+        </div>
+      );
+    }
+
+    return null;
   };
 
   // Render streaming indicators
@@ -179,6 +233,9 @@ const ChatMessage = ({
           {/* Show limit warning banner if applicable */}
           {isBot && renderLimitWarning()}
           
+          {/* Show response quality indicator if applicable */}
+          {isBot && renderQualityIndicator()}
+          
           {/* Show loading indicators appropriate for streaming/non-streaming */}
           {isLoading ? renderLoadingIndicator() : (
             <div className="prose prose-invert max-w-none">
@@ -194,28 +251,56 @@ const ChatMessage = ({
                         {...props}
                       />
                     ) : (
-                      <code className="bg-[#262626] px-1 py-0.5 rounded text-sm" {...props}>
+                      <code className="bg-[#262626] px-2 py-1 rounded text-sm font-mono text-[#FFB800]" {...props}>
                         {children}
                       </code>
                     );
                   },
-                  p: ({ children }) => <p className="text-sm text-gray-300 mb-2">{children}</p>,
-                  ul: ({ children }) => <ul className="list-disc list-inside mb-2">{children}</ul>,
-                  ol: ({ children }) => <ol className="list-decimal list-inside mb-2">{children}</ol>,
-                  li: ({ children }) => <li className="text-sm text-gray-300">{children}</li>,
+                  pre: ({ children }) => (
+                    <div className="my-4">
+                      {children}
+                    </div>
+                  ),
+                  p: ({ children }) => <p className="text-sm text-gray-300 mb-3 leading-relaxed">{children}</p>,
+                  ul: ({ children }) => <ul className="list-disc list-outside ml-6 mb-3 space-y-1">{children}</ul>,
+                  ol: ({ children }) => <ol className="list-decimal list-outside ml-6 mb-3 space-y-1">{children}</ol>,
+                  li: ({ children }) => <li className="text-sm text-gray-300 leading-relaxed">{children}</li>,
                   blockquote: ({ children }) => (
-                    <blockquote className="border-l-4 border-[#FFB800] pl-4 italic my-2">
+                    <blockquote className="border-l-4 border-[#FFB800] pl-4 italic my-3 bg-[#1a1a1a] py-2 rounded-r">
                       {children}
                     </blockquote>
                   ),
                   h1: ({ children }) => (
-                    <h1 className="text-xl font-bold text-[#FFB800] mb-2">{children}</h1>
+                    <h1 className="text-xl font-bold text-[#FFB800] mb-3 mt-4 border-b border-[#333] pb-1">{children}</h1>
                   ),
                   h2: ({ children }) => (
-                    <h2 className="text-lg font-bold text-[#FFB800] mb-2">{children}</h2>
+                    <h2 className="text-lg font-bold text-[#FFB800] mb-3 mt-3">{children}</h2>
                   ),
                   h3: ({ children }) => (
-                    <h3 className="text-base font-bold text-[#FFB800] mb-2">{children}</h3>
+                    <h3 className="text-base font-semibold text-[#FFB800] mb-2 mt-2">{children}</h3>
+                  ),
+                  h4: ({ children }) => (
+                    <h4 className="text-sm font-semibold text-[#FFD700] mb-2 mt-2">{children}</h4>
+                  ),
+                  strong: ({ children }) => (
+                    <strong className="font-bold text-white">{children}</strong>
+                  ),
+                  em: ({ children }) => (
+                    <em className="italic text-gray-200">{children}</em>
+                  ),
+                  table: ({ children }) => (
+                    <div className="overflow-x-auto my-4">
+                      <table className="min-w-full border border-[#333] rounded-lg">{children}</table>
+                    </div>
+                  ),
+                  thead: ({ children }) => (
+                    <thead className="bg-[#1a1a1a]">{children}</thead>
+                  ),
+                  th: ({ children }) => (
+                    <th className="border border-[#333] px-3 py-2 text-left text-sm font-semibold text-[#FFB800]">{children}</th>
+                  ),
+                  td: ({ children }) => (
+                    <td className="border border-[#333] px-3 py-2 text-sm text-gray-300">{children}</td>
                   ),
                 }}
               >

@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useState } from 'react';
+import { processAIResponse } from '../utils/responseProcessor';
 
 export const useAIResponse = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -151,6 +152,24 @@ export const useAIResponse = () => {
           if (response.ok) {
             const data = await response.json();
             
+            // Process the raw response to improve formatting and detect issues
+            const processedData = processAIResponse(data.response || '', {
+              checkTruncation: true,
+              improveFormatting: true,
+              analyzeCompleteness: true
+            });
+            
+            console.log('Response analysis:', {
+              originalLength: processedData.originalLength,
+              processedLength: processedData.processedLength,
+              isComplete: processedData.isComplete,
+              isTruncated: processedData.isTruncated,
+              confidence: processedData.confidence
+            });
+
+            // Use the processed response
+            const finalResponse = processedData.response;
+            
             // Check if this is a fallback response
             if (data.fallback) {
               console.log('✅ Received enhanced fallback response from AI proxy');
@@ -161,30 +180,33 @@ export const useAIResponse = () => {
                 console.log('📄 Enhanced fallback with processing context:', hints);
                 
                 return {
-                  response: data.response,
+                  response: finalResponse,
                   tokenUsage: data.tokenUsage,
                   fallback: true,
                   partialAnalysis: true,
                   processingHints: hints,
-                  suggestions: data.suggestions || []
+                  suggestions: data.suggestions || [],
+                  responseQuality: processedData
                 };
               }
               
               // If it's a partial analysis, enhance it with additional suggestions
               if (data.partialAnalysis) {
                 return {
-                  response: data.response,
+                  response: finalResponse,
                   tokenUsage: data.tokenUsage,
                   fallback: true,
                   partialAnalysis: true,
-                  suggestions: data.suggestions || []
+                  suggestions: data.suggestions || [],
+                  responseQuality: processedData
                 };
               }
               
               return {
-                response: data.response,
+                response: finalResponse,
                 tokenUsage: data.tokenUsage,
-                fallback: true
+                fallback: true,
+                responseQuality: processedData
               };
             }
             
@@ -204,13 +226,14 @@ export const useAIResponse = () => {
             
             console.log(`✅ AI response generated successfully on attempt ${attempt}`);
             return {
-              response: data.response || 'I apologize, but I could not generate a response.',
+              response: finalResponse || 'I apologize, but I could not generate a response.',
               limitReached: data.limitReached || false,
               tokenUsage: data.tokenUsage || {
                 total_tokens: 0,
                 prompt_tokens: 0,
                 completion_tokens: 0
-              }
+              },
+              responseQuality: processedData
             };
           }
           
@@ -535,13 +558,29 @@ Please try your question again in a moment - I'm committed to helping you succee
           if (aiResponse.ok) {
             const data = await aiResponse.json();
             
+            // Process the response for better formatting and quality
+            const processedData = processAIResponse(data.response || '', {
+              checkTruncation: true,
+              improveFormatting: true,
+              analyzeCompleteness: true
+            });
+            
+            console.log(`Response quality analysis for lecture ${lectureId}:`, {
+              isComplete: processedData.isComplete,
+              confidence: processedData.confidence,
+              isTruncated: processedData.isTruncated
+            });
+
+            const finalResponse = processedData.response;
+            
             // Check if this is a fallback response
             if (data.fallback) {
               console.log('✅ Received fallback response from AI proxy');
               return {
-                response: data.response,
+                response: finalResponse,
                 tokenUsage: data.tokenUsage,
-                fallback: true
+                fallback: true,
+                responseQuality: processedData
               };
             }
             
@@ -549,26 +588,28 @@ Please try your question again in a moment - I'm committed to helping you succee
             if (preferences.tokenPredictionLimit && 
                 (totalTokensUsed + (data.tokenUsage?.total_tokens || 0)) > preferences.tokenPredictionLimit) {
               return {
-                response: data.response,
+                response: finalResponse,
                 tokenUsage: data.tokenUsage || {
                   total_tokens: 0,
                   prompt_tokens: 0,
                   completion_tokens: 0
                 },
-                tokenLimitWarning: `You are now at ${totalTokensUsed + (data.tokenUsage?.total_tokens || 0)}/${preferences.tokenPredictionLimit} tokens for this session.`
+                tokenLimitWarning: `You are now at ${totalTokensUsed + (data.tokenUsage?.total_tokens || 0)}/${preferences.tokenPredictionLimit} tokens for this session.`,
+                responseQuality: processedData
               };
             }
             
             console.log(`✅ AI response generated successfully for lecture ${lectureId}`);
             return {
-              response: data.response || 'I apologize, but I could not generate a response.',
+              response: finalResponse || 'I apologize, but I could not generate a response.',
               limitReached: data.limitReached || false,
               tokenUsage: data.tokenUsage || {
                 total_tokens: 0, 
                 prompt_tokens: 0,
                 completion_tokens: 0
               },
-              streaming: preferences.streaming || false
+              streaming: preferences.streaming || false,
+              responseQuality: processedData
             };
           }
           
