@@ -219,11 +219,10 @@ export const useChatHandlers = (
       }
 
       // Handle AI response result
-      let aiResponse, messageTokenUsage, responseQuality;
+      let aiResponse, messageTokenUsage;
       if (aiResult.status === 'fulfilled') {
         aiResponse = aiResult.value.response;
         messageTokenUsage = aiResult.value.tokenUsage;
-        responseQuality = aiResult.value.responseQuality; // Add response quality data
         
         // If this is a fallback response, inform the user subtly
         if (aiResult.value.fallback) {
@@ -264,8 +263,7 @@ export const useChatHandlers = (
         suggestions: [],
         attachments: [],
         timestamp: new Date().toISOString(),
-        tokenUsage: messageTokenUsage,
-        responseQuality: responseQuality // Add response quality data
+        tokenUsage: messageTokenUsage
       };
 
       // Check if we would exceed token limit with this message

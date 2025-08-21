@@ -450,16 +450,8 @@ function cleanResponseContent(content) {
     return '';
   }
 
-  // First, preserve code blocks to prevent formatting corruption
-  const codeBlocks = [];
-  let codeBlockIndex = 0;
-  let tempContent = content.replace(/```[\s\S]*?```/g, (match) => {
-    codeBlocks.push(match);
-    return `__CODE_BLOCK_${codeBlockIndex++}__`;
-  });
-
   // Remove common unwanted patterns that sometimes appear in responses
-  let cleanedContent = tempContent
+  let cleanedContent = content
     // Remove any mentions of being DeepSeek or other AI systems
     .replace(/I am DeepSeek[^.]*\./gi, '')
     .replace(/As DeepSeek[^,]*,?/gi, '')
@@ -468,55 +460,62 @@ function cleanResponseContent(content) {
     // Remove unnecessary introductory phrases that add no value
     .replace(/^(Sure,?\s*|Of course,?\s*|Certainly,?\s*|Absolutely,?\s*)+/gi, '')
     
-    // Clean up multiple newlines and extra whitespace (but preserve structure)
-    .replace(/\n{4,}/g, '\n\n\n')
-    .replace(/[ \t]{3,}/g, '  ')
+    // Fix code formatting issues - ensure proper line breaks in code blocks
+    .replace(/```(\w+)\s*([^`]+)```/g, (match, language, code) => {
+      // Clean up the code inside code blocks
+      let cleanCode = code
+        // Fix common single-line formatting issues
+        .replace(/def\s+(\w+)\([^)]*\):\s*([^#\n]+)/g, (match, funcName, funcBody) => {
+          // Python function formatting
+          const formatted = funcBody
+            .replace(/;\s*/g, '\n    ')
+            .replace(/return\s+/g, '\n    return ')
+            .replace(/if\s+/g, '\n    if ')
+            .replace(/else:\s*/g, '\n    else:\n        ');
+          return `def ${funcName}(${match.match(/\([^)]*\)/)[0]}:\n    ${formatted}`;
+        })
+        // Fix Java/C++ style functions
+        .replace(/(\w+\s+\w+\([^)]*\)\s*{[^}]+})/g, (match) => {
+          return match
+            .replace(/{/g, '{\n    ')
+            .replace(/;(?!\s*})/g, ';\n    ')
+            .replace(/}/g, '\n}');
+        })
+        // Fix general statement separation
+        .replace(/;\s*(?=\w)/g, ';\n    ')
+        .replace(/{\s*(?=\w)/g, '{\n    ')
+        .replace(/}\s*(?=\w)/g, '}\n    ')
+        // Clean up extra whitespace
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      return `\`\`\`${language}\n${cleanCode}\n\`\`\``;
+    })
     
-    // Remove trailing whitespace from lines but preserve line structure
-    .replace(/[ \t]+$/gm, '')
+    // Clean up multiple newlines and extra whitespace
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\s{3,}/g, ' ')
+    
+    // Remove trailing whitespace and normalize line endings
     .trim();
 
-  // Restore code blocks with proper formatting
-  codeBlocks.forEach((block, index) => {
-    const placeholder = `__CODE_BLOCK_${index}__`;
-    // Improve code block formatting while preserving original structure
-    const formattedBlock = formatCodeBlock(block);
-    cleanedContent = cleanedContent.replace(placeholder, formattedBlock);
-  });
+  // Check for and remove duplicate or repetitive content patterns
+  const lines = cleanedContent.split('\n');
+  const uniqueLines = [];
+  const seenContent = new Set();
 
-  // Final cleanup - remove any duplicate empty lines but preserve intentional spacing
-  cleanedContent = cleanedContent.replace(/\n{3,}/g, '\n\n');
+  for (const line of lines) {
+    const normalizedLine = line.trim().toLowerCase();
+    // Only add line if it's not a duplicate or very similar to previous content
+    if (normalizedLine.length > 0 && !seenContent.has(normalizedLine)) {
+      uniqueLines.push(line);
+      seenContent.add(normalizedLine);
+    }
+  }
+
+  cleanedContent = uniqueLines.join('\n');
 
   return cleanedContent;
-}
-
-/**
- * Format code blocks properly without corrupting the code structure
- * @param {string} codeBlock - The code block to format
- * @returns {string} Formatted code block
- */
-function formatCodeBlock(codeBlock) {
-  const match = codeBlock.match(/^```(\w+)?\s*([\s\S]*?)```$/);
-  if (!match) return codeBlock;
-  
-  const [, language = '', code] = match;
-  
-  // Clean up the code without aggressive reformatting that might break it
-  let cleanCode = code
-    // Remove excessive whitespace at start and end
-    .replace(/^\s+/, '')
-    .replace(/\s+$/, '')
-    // Fix common issues with single-line code being put on one line
-    .replace(/;\s*(?=[a-zA-Z_$])/g, ';\n') // Add line breaks after semicolons
-    .replace(/\{\s*([^}]+)\s*\}/g, (match, content) => {
-      // Only format simple single-line blocks, avoid complex nested structures
-      if (content.includes('{') || content.includes('\n')) return match;
-      return `{\n  ${content.trim()}\n}`;
-    })
-    // Ensure proper spacing around operators (but only if not already formatted)
-    .replace(/([^\s])([=+\-*/%<>!&|])([^\s=+\-*/%<>!&|])/g, '$1 $2 $3');
-
-  return `\`\`\`${language}\n${cleanCode}\n\`\`\``;
 }
 
 // Initialize on module load
@@ -739,16 +738,11 @@ RESPONSE QUALITY RULES:
 - Stop after answering the question completely - do not continue with additional topics
 - Do not generate follow-up questions unless specifically asked
 - Keep responses focused and relevant to the user's request
-- ALWAYS provide complete responses - never truncate or cut off explanations
-- Ensure your response fully addresses the question before stopping
-
-CODE FORMATTING RULES (CRITICAL):
-- When providing code examples, ALWAYS use proper markdown code blocks
-- Specify the programming language after the opening triple backticks
+- When providing code examples, ALWAYS format them with proper line breaks
 - Put each statement on a separate line with proper indentation
-- Never compress multiple lines of code into a single line
-- Use consistent indentation (2 or 4 spaces)
-- Ensure code is readable and properly formatted
+- Use proper markdown code blocks with language specification
+- Never put multiple lines of code on a single line
+- Ensure readable, well-formatted code structure
 
 Your core functions:
 1. Provide educational support and academic assistance
@@ -823,40 +817,36 @@ As BELTO AI, you are processing ${documentTypes} file(s) for educational purpose
     const requestTimeout = getTimeoutForRequest(body, optimizedMessages);
 
     // Determine appropriate token limit based on request complexity - EDUCATIONAL FOCUS
-    let maxTokens = 1000; // Significantly increased default for complete responses
+    let maxTokens = 500; // Increased default for complete responses
     const totalContentLength = optimizedMessages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
     const hasAttachments = body.attachments && body.attachments.length > 0;
     
     // EDUCATIONAL RESPONSE OPTIMIZATION: Ensure complete, helpful responses
     if (!hasAttachments && totalContentLength < 100) {
-      maxTokens = 500; // Increased for complete basic responses
-      console.log(`⚡ Using basic educational token limit (${maxTokens}) for simple message`);
+      maxTokens = 150; // Increased for complete basic responses
+      console.log(`� Using basic educational token limit (${maxTokens}) for simple message`);
     } else if (!hasAttachments && totalContentLength < 200) {
-      maxTokens = 800; // Increased for comprehensive responses
+      maxTokens = 250; // Increased for comprehensive responses
       console.log(`📚 Using standard educational token limit (${maxTokens}) for simple message`);
     } else if (!hasAttachments && totalContentLength < 500) {
-      maxTokens = 1000; // Increased for detailed explanations
-      console.log(`🎯 Using enhanced educational token limit (${maxTokens}) for basic request`);
+      maxTokens = 400; // Increased for detailed explanations
+      console.log(`� Using enhanced educational token limit (${maxTokens}) for basic request`);
     } else if (!hasAttachments && totalContentLength < 1000) {
-      maxTokens = 1500; // Increased for comprehensive responses
+      maxTokens = 600; // Increased for comprehensive responses
       console.log(`📝 Using comprehensive token limit (${maxTokens}) for normal request`);
     } else if (hasAttachments) {
       // EDUCATIONAL DOCUMENT PROCESSING: Scale appropriately for academic content
       const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
       if (docSize > 100000) {
-        maxTokens = 4000; // Significantly increased for comprehensive document analysis
+        maxTokens = 2000; // Increased for comprehensive document analysis
       } else if (docSize > 50000) {
-        maxTokens = 3000; // Increased for detailed document analysis
+        maxTokens = 1500; // Increased for detailed document analysis
       } else if (docSize > 20000) {
-        maxTokens = 2500; // Increased for comprehensive analysis
+        maxTokens = 1000; // Increased for comprehensive analysis
       } else {
-        maxTokens = 2000; // Increased for thorough document understanding
+        maxTokens = 800; // Increased for thorough document understanding
       }
       console.log(`📄 Using adaptive token limit (${maxTokens}) for document request`);
-    } else {
-      // Default case for larger content without attachments
-      maxTokens = 2000; // Increased default for complex conversations
-      console.log(`💬 Using large conversation token limit (${maxTokens}) for complex request`);
     }
 
     // Prepare the request payload optimized for speed
