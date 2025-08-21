@@ -17,6 +17,7 @@ import SimpleBar from 'simplebar-react';
 import 'simplebar-react/dist/simplebar.min.css';
 import { toast } from 'react-toastify';
 import { deleteAllCookies } from '@/utils/auth';
+import { useUser } from '@/contexts/UserContext';
 
 // Custom scrollbar styles
 const customScrollbarStyles = `
@@ -29,10 +30,12 @@ const customScrollbarStyles = `
 `;
 
 const Sidebar = () => {
+  // Get user from context instead of local state
+  const { user } = useUser();
+  
   // UI and data states
   const [isOpen, setIsOpen] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
-  const [user, setUser] = useState(null);
   const [joinedClasses, setJoinedClasses] = useState([]);
   const [error, setError] = useState('');
   const [expandedClass, setExpandedClass] = useState(null);
@@ -71,32 +74,17 @@ const Sidebar = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Modified useEffect for fetching user and classes
+  // Modified useEffect for fetching classes - user data now comes from context
   useEffect(() => {
-    const fetchUserAndClasses = async () => {
-      // Skip if sessions already initialized
-      if (sessionsInitialized) return;
+    const fetchClasses = async () => {
+      // Skip if sessions already initialized or user is not available
+      if (sessionsInitialized || !user) return;
 
       try {
         setClassesLoading(true);
-        // Fetch user data first
-        const userResponse = await fetch('/api/auth/user'); // Removed token header, assuming cookie auth
-        if (!userResponse.ok) {
-            if (userResponse.status === 401) {
-                // Handle unauthorized access, maybe redirect to login
-                console.error("User not authenticated");
-                router.push('/'); // Redirect to login if not authenticated
-                return; // Stop execution if not authenticated
-            }
-            throw new Error('Failed to fetch user');
-        }
-        const userData = await userResponse.json();
-        console.log('Sidebar - User data fetched:', userData);
-        console.log('Sidebar - Profile image:', userData.profileImage);
-        setUser(userData); // Set user state
-
-        // Fetch joined classes using the fetched user ID
-        const classesResponse = await fetch(`/api/classes/joined?studentId=${userData._id}`);
+        
+        // Fetch joined classes using the user ID from context
+        const classesResponse = await fetch(`/api/classes/joined?studentId=${user._id}`);
         if (!classesResponse.ok) throw new Error('Failed to fetch joined classes');
         const classes = await classesResponse.json();
 
@@ -122,7 +110,7 @@ const Sidebar = () => {
         setLectures(allLectures);
 
         // Initialize sessions with lecture titles
-        await initializeSessions(userData._id, allLectures, lectureDetailsMap);
+        await initializeSessions(user._id, allLectures, lectureDetailsMap);
 
         // Mark sessions as initialized after successful initialization
         setSessionsInitialized(true);
@@ -130,18 +118,15 @@ const Sidebar = () => {
       } catch (error) {
         console.error('Error fetching initial data:', error);
         setError(error.message);
-        // If the error is authentication-related, redirect
-        if (error.message.includes('Failed to fetch user') || error.status === 401) {
-            router.push('/');
-        }
+        // If there's an authentication error, the UserContext will handle it
       } finally {
         setClassesLoading(false);
       }
     };
 
-    fetchUserAndClasses();
+    fetchClasses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionsInitialized, router]); // Added router to dependency array
+  }, [sessionsInitialized, user]); // Changed from router to user
 
 
   // Fixed initialize sessions function

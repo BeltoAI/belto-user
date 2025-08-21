@@ -4,8 +4,10 @@ import React, { useState, useEffect } from 'react';
 import { Edit, Camera, Mail, Phone, Calendar, Users, Trophy, TrendingUp, Heart, ThumbsUp, ThumbsDown, User } from 'lucide-react';
 import { toast } from 'react-toastify';
 import Image from 'next/image';
+import { useUser } from '@/contexts/UserContext';
 
 const ProfileInformation = ({ user, onUserUpdate }) => {
+  const { updateUser: updateGlobalUser } = useUser();
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     fullName: user?.username || '',
@@ -19,7 +21,7 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
     ethnicity: ''
   });
   const [profileImage, setProfileImage] = useState(null);
-  const [previewImage, setPreviewImage] = useState('/user.png');
+  const [previewImage, setPreviewImage] = useState(user?.profileImage || '/user.png');
   const [userStats, setUserStats] = useState({
     totalPrompts: 0,
     totalLikes: 0,
@@ -87,6 +89,13 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
     fetchProfileData();
   }, []);
 
+  // Update preview image when user prop changes (for when user data is updated)
+  useEffect(() => {
+    if (user?.profileImage && user.profileImage !== previewImage) {
+      setPreviewImage(user.profileImage);
+    }
+  }, [user?.profileImage, previewImage]);
+
   const handleInputChange = (field, value) => {
     setFormData(prev => ({
       ...prev,
@@ -134,6 +143,17 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
       if (response.ok) {
         const updatedUser = await response.json();
         onUserUpdate(updatedUser);
+        
+        // Update the global user context so all components get the updated data
+        updateGlobalUser(updatedUser);
+        
+        // Update the preview image to the new profile image from the response
+        if (updatedUser.profileImage) {
+          setPreviewImage(updatedUser.profileImage);
+        }
+        
+        // Reset profile image state since we're no longer editing
+        setProfileImage(null);
         setIsEditing(false);
         toast.success('Profile updated successfully');
       } else {

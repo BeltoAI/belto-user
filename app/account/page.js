@@ -8,37 +8,18 @@ import Image from 'next/image';
 import AccountSettings from './components/AccountSettings';
 import ProfileInformation from './components/ProfileInformation';
 import Loading from '../components/Loading';
+import { useUser } from '@/contexts/UserContext';
 
 const AccountPage = () => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { user, loading, updateUser } = useUser();
   const [activeSection, setActiveSection] = useState('profile');
   const router = useRouter();
 
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const response = await fetch('/api/auth/user');
-        if (!response.ok) {
-          if (response.status === 401) {
-            router.push('/');
-            return;
-          }
-          throw new Error('Failed to fetch user');
-        }
-        const userData = await response.json();
-        setUser(userData);
-      } catch (error) {
-        console.error('Error fetching user:', error);
-        toast.error('Failed to load profile');
-        router.push('/');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchUser();
-  }, [router]);
+    if (!loading && !user) {
+      router.push('/');
+    }
+  }, [loading, user, router]);
 
   if (loading) {
     return <Loading />;
@@ -179,7 +160,7 @@ const AccountPage = () => {
             <AccountSettings
               activeSection={activeSection}
               user={user}
-              onUserUpdate={setUser}
+              onUserUpdate={updateUser}
             />
           </div>
         </div>

@@ -3,6 +3,7 @@
 import { useCallback, useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { useAIResponse } from './useAIResponse';
+import { useUser } from '@/contexts/UserContext';
 
 // Update the function signature to accept lectureMaterials
 export const useChatHandlers = (
@@ -16,6 +17,7 @@ export const useChatHandlers = (
   aiPreferences, // Add AI preferences parameter
   lectureMaterials = [] // Add this parameter
 ) => {
+  const { user } = useUser();
   const [username, setUsername] = useState('User');
   const [userAvatar, setUserAvatar] = useState('/user.png');
   const { generateAIResponse } = useAIResponse();
@@ -24,27 +26,13 @@ export const useChatHandlers = (
   const [totalTokenUsage, setTotalTokenUsage] = useState(0);
   const [totalPrompts, setTotalPrompts] = useState(0);
 
-  // Add useEffect to fetch username and profile image when component mounts
+  // Update username and avatar when user data changes
   useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        const response = await fetch('/api/auth/user');
-        
-        if (!response.ok) throw new Error('Failed to fetch user data');
-        
-        const userData = await response.json();
-        setUsername(userData.username || 'User');
-        setUserAvatar(userData.profileImage || '/user.png');
-      } catch (error) {
-        console.error('Error fetching user data:', error);
-        // Fallback to defaults if fetch fails
-        setUsername('User');
-        setUserAvatar('/user.png');
-      }
-    };
-
-    fetchUserData();
-  }, []);
+    if (user) {
+      setUsername(user.username || 'User');
+      setUserAvatar(user.profileImage || '/user.png');
+    }
+  }, [user]);
 
   // Calculate initial values when component mounts
   useEffect(() => {
