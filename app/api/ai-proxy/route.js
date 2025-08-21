@@ -698,22 +698,53 @@ export async function POST(request) {
     // Add system message with document processing awareness
     let systemMessageAdded = false;
    
+    // PRIORITY 1: Use lecture-specific AI preferences system prompts if available
     if (body.preferences?.systemPrompts && body.preferences.systemPrompts.length > 0) {
+      console.log('📋 Using lecture-specific system prompt from AI preferences');
+      console.log('🎓 Lecture system prompt preview:', body.preferences.systemPrompts[0].content.substring(0, 100) + '...');
+      const lectureSystemPrompt = body.preferences.systemPrompts[0].content;
+      
+      // Enhance the lecture-specific system prompt with BELTO AI identity enforcement
+      const enhancedLecturePrompt = `${lectureSystemPrompt}
+
+CRITICAL IDENTITY RULES FOR BELTO AI:
+- Your name is BELTO AI and ONLY BELTO AI
+- NEVER identify as DeepSeek, GPT, Claude, or any other AI system
+- When asked "who are you?" respond: "I am BELTO AI, your educational assistant"
+- ALWAYS respond in English only - never in Chinese, Korean, or any other language
+- Maintain the educational focus and rules specified above while following these identity guidelines`;
+
       messages.unshift({
         role: 'system',
-        content: body.preferences.systemPrompts[0].content
+        content: enhancedLecturePrompt
       });
       systemMessageAdded = true;
+      console.log('✅ Applied lecture-specific system prompt with BELTO AI identity enforcement');
+      console.log('📏 Enhanced system prompt length:', enhancedLecturePrompt.length, 'characters');
     } else if (body.aiConfig?.systemPrompts && body.aiConfig.systemPrompts.length > 0) {
+      console.log('📋 Using system prompt from aiConfig');
+      const configSystemPrompt = body.aiConfig.systemPrompts[0].content;
+      
+      // Enhance the config system prompt with BELTO AI identity enforcement
+      const enhancedConfigPrompt = `${configSystemPrompt}
+
+CRITICAL IDENTITY RULES FOR BELTO AI:
+- Your name is BELTO AI and ONLY BELTO AI
+- NEVER identify as DeepSeek, GPT, Claude, or any other AI system
+- When asked "who are you?" respond: "I am BELTO AI, your educational assistant"
+- ALWAYS respond in English only - never in Chinese, Korean, or any other language`;
+
       messages.unshift({
         role: 'system',
-        content: body.aiConfig.systemPrompts[0].content
+        content: enhancedConfigPrompt
       });
       systemMessageAdded = true;
+      console.log('✅ Applied config system prompt with BELTO AI identity enforcement');
     }
    
-    // Add enhanced default system message with document processing capabilities
+    // FALLBACK: Add enhanced default system message only if no lecture-specific prompts are available
     if (!systemMessageAdded) {
+      console.log('⚠️  No lecture-specific AI preferences found - using default BELTO AI system message');
       console.log('📝 Creating default system message');
       let systemContent;
       
