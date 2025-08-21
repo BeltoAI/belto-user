@@ -460,27 +460,22 @@ const Sidebar = () => {
                 }}
                 className="flex items-center w-full mb-3 px-2 py-2 hover:bg-[#262626] rounded-md transition-colors group" 
               >
-                {user.profileImage ? (
-                  <div className="w-8 h-8 rounded-full overflow-hidden mr-2 border-2 border-[#FFD700] group-hover:border-[#FFE44D]">
+                <div className="w-8 h-8 rounded-full overflow-hidden mr-2 border-2 border-[#FFD700] group-hover:border-[#FFE44D] bg-[#2a2a2a] flex items-center justify-center">
+                  {user.profileImage ? (
                     <img 
                       src={user.profileImage} 
                       alt="Profile" 
                       className="w-full h-full object-cover"
                       onError={(e) => {
-                        console.log('Profile image failed to load:', user.profileImage);
-                        // Fallback to User icon if image fails to load
+                        // Hide the image and show the parent container with User icon
                         e.target.style.display = 'none';
-                        e.target.nextSibling.style.display = 'block';
-                      }}
-                      onLoad={() => {
-                        console.log('Profile image loaded successfully:', user.profileImage);
+                        e.target.parentElement.innerHTML = '<svg class="w-5 h-5 text-[#FFD700] group-hover:text-[#FFE44D]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>';
                       }}
                     />
-                    <User className="w-full h-full text-[#FFD700] group-hover:text-[#FFE44D] hidden" />
-                  </div>
-                ) : (
-                  <User className="w-5 h-5 text-[#FFD700] mr-2 group-hover:text-[#FFE44D]" />
-                )}
+                  ) : (
+                    <User className="w-5 h-5 text-[#FFD700] group-hover:text-[#FFE44D]" />
+                  )}
+                </div>
                 <span className="text-white truncate text-sm group-hover:text-[#FFE44D]">{user.username}</span>
               </button>
             )}

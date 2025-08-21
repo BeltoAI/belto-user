@@ -21,7 +21,7 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
     ethnicity: ''
   });
   const [profileImage, setProfileImage] = useState(null);
-  const [previewImage, setPreviewImage] = useState(user?.profileImage || '/user.png');
+  const [previewImage, setPreviewImage] = useState('/user.png');
   const [userStats, setUserStats] = useState({
     totalPrompts: 0,
     totalLikes: 0,
@@ -89,6 +89,13 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
     fetchProfileData();
   }, []);
 
+  // Initialize preview image when user data becomes available
+  useEffect(() => {
+    if (user?.profileImage) {
+      setPreviewImage(user.profileImage);
+    }
+  }, [user?.profileImage]);
+
   // Update preview image when user prop changes (for when user data is updated)
   useEffect(() => {
     if (user?.profileImage && user.profileImage !== previewImage) {
@@ -106,8 +113,8 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        toast.error('Image size must be less than 5MB');
+      if (file.size > 2 * 1024 * 1024) { // 2MB limit for Base64 storage
+        toast.error('Image size must be less than 2MB');
         return;
       }
       

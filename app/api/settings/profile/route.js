@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 import { getTokenFromCookie, verifyAuth } from '@/midldleware/authMiddleware';
 import connectDB from '@/lib/db';
 import Student from '@/models/Student';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
 
 export async function GET(request) {
   try {
@@ -101,25 +99,41 @@ export async function PUT(request) {
     const ethnicity = formData.get('ethnicity');
     const profileImage = formData.get('profileImage');
 
-    // Handle profile image upload
+    // Handle profile image upload - Convert to Base64 for Vercel compatibility
     let profileImagePath = user.profileImage;
     if (profileImage && profileImage instanceof File && profileImage.size > 0) {
-      const bytes = await profileImage.arrayBuffer();
-      const buffer = Buffer.from(bytes);
+      try {
+        // Check file size (limit to 2MB for Base64 storage)
+        if (profileImage.size > 2 * 1024 * 1024) {
+          return NextResponse.json(
+            { error: 'Image size must be less than 2MB' },
+            { status: 400 }
+          );
+        }
 
-      // Create uploads directory if it doesn't exist
-      const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'profiles');
-      await mkdir(uploadsDir, { recursive: true });
+        // Check file type
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+        if (!allowedTypes.includes(profileImage.type)) {
+          return NextResponse.json(
+            { error: 'Only JPEG, PNG, and WebP images are allowed' },
+            { status: 400 }
+          );
+        }
 
-      // Generate unique filename
-      const timestamp = Date.now();
-      const fileExtension = path.extname(profileImage.name);
-      const fileName = `profile_${decoded.userId}_${timestamp}${fileExtension}`;
-      const filePath = path.join(uploadsDir, fileName);
-
-      // Write file
-      await writeFile(filePath, buffer);
-      profileImagePath = `/uploads/profiles/${fileName}`;
+        // Convert to Base64
+        const bytes = await profileImage.arrayBuffer();
+        const buffer = Buffer.from(bytes);
+        const base64String = buffer.toString('base64');
+        profileImagePath = `data:${profileImage.type};base64,${base64String}`;
+        
+        console.log('Profile image converted to Base64, size:', profileImagePath.length);
+      } catch (error) {
+        console.error('Error processing profile image:', error);
+        return NextResponse.json(
+          { error: 'Failed to process profile image' },
+          { status: 500 }
+        );
+      }
     }
 
     // Update user profile
@@ -139,6 +153,7 @@ export async function PUT(request) {
       { new: true, runValidators: true }
     ).select('-password');
 
+    console.log('User profile updated successfully, profileImage length:', updatedUser.profileImage?.length || 0);
     return NextResponse.json(updatedUser);
   } catch (error) {
     console.error('Error updating profile:', error);
