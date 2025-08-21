@@ -149,6 +149,9 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
 
       if (response.ok) {
         const updatedUser = await response.json();
+        console.log('Profile updated successfully, new user data:', updatedUser);
+        
+        // Update local state first
         onUserUpdate(updatedUser);
         
         // Update the global user context so all components get the updated data
@@ -157,6 +160,7 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
         // Update the preview image to the new profile image from the response
         if (updatedUser.profileImage) {
           setPreviewImage(updatedUser.profileImage);
+          console.log('Updated preview image to:', updatedUser.profileImage.substring(0, 50) + '...');
         }
         
         // Reset profile image state since we're no longer editing

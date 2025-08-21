@@ -23,6 +23,11 @@ export const UserProvider = ({ children }) => {
       const response = await fetch('/api/auth/user');
       if (response.ok) {
         const userData = await response.json();
+        console.log('UserContext: Fetched user data:', { 
+          username: userData.username, 
+          hasProfileImage: !!(userData.profileImage && userData.profileImage.trim() !== ''),
+          profileImageLength: userData.profileImage ? userData.profileImage.length : 0
+        });
         setUser(userData);
       } else if (response.status === 401) {
         setUser(null);
@@ -39,6 +44,7 @@ export const UserProvider = ({ children }) => {
   };
 
   const updateUser = (updatedUser) => {
+    console.log('UserContext: Updating user with new data:', updatedUser);
     setUser(updatedUser);
   };
 

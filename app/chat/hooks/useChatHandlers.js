@@ -30,7 +30,14 @@ export const useChatHandlers = (
   useEffect(() => {
     if (user) {
       setUsername(user.username || 'User');
-      setUserAvatar(user.profileImage || '/user.png');
+      // Only use /user.png if profileImage is null, undefined, or empty string
+      const avatarToUse = (user.profileImage && user.profileImage.trim() !== '') ? user.profileImage : '/user.png';
+      setUserAvatar(avatarToUse);
+      console.log('Chat handler updated avatar:', { 
+        profileImage: user.profileImage, 
+        avatarToUse,
+        hasProfileImage: !!(user.profileImage && user.profileImage.trim() !== '')
+      });
     }
   }, [user]);
 

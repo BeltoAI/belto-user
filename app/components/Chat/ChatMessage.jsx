@@ -140,7 +140,7 @@ const ChatMessage = ({
           />
         ) : (
           <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
-            {avatar && avatar !== '/user.png' ? (
+            {avatar && avatar.trim() !== '' && avatar !== '/user.png' ? (
               <Image 
                 src={avatar}
                 alt={name || "User"}
@@ -148,6 +148,7 @@ const ChatMessage = ({
                 height={32}
                 className="w-full h-full object-cover"
                 onError={(e) => {
+                  console.log('Chat avatar failed to load, using fallback');
                   // Fallback to default user image if profile image fails to load
                   e.target.src = '/user.png';
                 }}
