@@ -148,20 +148,36 @@ const useChatStore = create((set, get) => ({
     const userId = get().userId;
     const sessionId = get().currentSessionId;
 
+    console.log('🔄 Fetching chat history:', {
+      userId: userId ? 'present' : 'missing',
+      sessionId: sessionId ? sessionId.substring(0, 8) + '...' : 'missing'
+    });
+
     if (!userId || !sessionId) {
-      console.error('Missing userId or sessionId');
+      console.error('❌ Missing userId or sessionId for chat history');
       return [];
     }
 
     try {
-      const response = await fetch(`/api/chat?sessionId=${sessionId}`);
+      const response = await fetch(`/api/chat?sessionId=${sessionId}&userId=${userId}`);
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch chat history: ${response.status}`);
+        const errorText = await response.text();
+        console.error('❌ Failed to fetch chat history:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText
+        });
+        throw new Error(`Failed to fetch chat history: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
       let messages = data.messages || [];
+      
+      console.log('📖 Raw chat history received:', {
+        messageCount: messages.length,
+        sessionId: data.sessionId?.substring(0, 8) + '...' || 'unknown'
+      });
       
       // Get user data to set correct avatar for messages without one
       try {
@@ -183,15 +199,20 @@ const useChatStore = create((set, get) => ({
           });
         }
       } catch (userError) {
-        console.error('Error fetching user data for avatar fix:', userError);
+        console.warn('⚠️ Error fetching user data for avatar fix:', userError);
+        // Don't fail the entire operation if user data fetch fails
       }
       
-      console.log('Loaded chat history:', messages); // Debug log
-      set({ messages });
+      console.log('✅ Chat history processed successfully:', {
+        messageCount: messages.length,
+        hasMessages: messages.length > 0
+      });
+      
+      set({ messages, isLoading: false });
       return messages;
     } catch (error) {
-      console.error('Error fetching chat history:', error);
-      set({ messages: [] });
+      console.error('💥 Error fetching chat history:', error);
+      set({ messages: [], isLoading: false });
       return [];
     }
   },
