@@ -19,7 +19,8 @@ export const useChatHandlers = (
 ) => {
   const { user } = useUser();
   const [username, setUsername] = useState('User');
-  const [userAvatar, setUserAvatar] = useState('/user.png');
+  // Start with empty avatar; UI will render an icon fallback (no user.png)
+  const [userAvatar, setUserAvatar] = useState('');
   const { generateAIResponse } = useAIResponse();
 
   // Track total token usage for the session
@@ -30,11 +31,16 @@ export const useChatHandlers = (
   useEffect(() => {
     if (user) {
       setUsername(user.username || 'User');
-      // Only use /user.png if profileImage is null, undefined, or empty string
-      const avatarToUse = (user.profileImage && user.profileImage.trim() !== '') ? user.profileImage : '/user.png';
+      // Prefer profileImage, then Google picture, else empty string
+      const avatarToUse = (user.profileImage && user.profileImage.trim() !== '')
+        ? user.profileImage
+        : (user.picture && user.picture.trim() !== '')
+          ? user.picture
+          : '';
       setUserAvatar(avatarToUse);
-      console.log('Chat handler updated avatar:', { 
-        profileImage: user.profileImage, 
+      console.log('Chat handler updated avatar:', {
+        profileImage: user.profileImage,
+        picture: user.picture,
         avatarToUse,
         hasProfileImage: !!(user.profileImage && user.profileImage.trim() !== '')
       });

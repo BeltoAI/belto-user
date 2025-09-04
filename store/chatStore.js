@@ -174,7 +174,8 @@ const useChatStore = create((set, get) => ({
             if (!msg.isBot && !msg.avatar) {
               return {
                 ...msg,
-                avatar: userData.profileImage || '/user.png',
+                // Prefer stored profileImage then Google picture; leave empty to let UI render icon fallback
+                avatar: userData.profileImage || userData.picture || '',
                 name: msg.name || userData.username || 'User'
               };
             }

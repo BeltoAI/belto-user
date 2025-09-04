@@ -13,6 +13,7 @@ import {
   ThumbsDown
 } from 'lucide-react';
 import Image from 'next/image';
+import { User as UserIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -139,8 +140,8 @@ const ChatMessage = ({
             className="rounded-full object-cover w-8 h-8"
           />
         ) : (
-          <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
-            {avatar && avatar.trim() !== '' && avatar !== '/user.png' ? (
+          <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-[#2a2a2a] border border-[#333] grid place-items-center">
+            {avatar && avatar.trim() !== '' ? (
               <Image 
                 src={avatar}
                 alt={name || "User"}
@@ -148,19 +149,21 @@ const ChatMessage = ({
                 height={32}
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  console.log('Chat avatar failed to load, using fallback');
-                  // Fallback to default user image if profile image fails to load
-                  e.target.src = '/user.png';
+                  console.log('Chat avatar failed to load, using icon fallback');
+                  // Replace with icon fallback
+                  e.currentTarget.style.display = 'none';
+                  const parent = e.currentTarget.parentElement;
+                  if (parent) {
+                    parent.innerHTML = '';
+                    const span = document.createElement('span');
+                    span.className = 'flex items-center justify-center w-8 h-8';
+                    span.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFB800" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>';
+                    parent.appendChild(span);
+                  }
                 }}
               />
             ) : (
-              <Image 
-                src="/user.png"
-                alt={name || "User"}
-                width={32}
-                height={32}
-                className="w-full h-full object-cover"
-              />
+              <UserIcon className="w-5 h-5 text-[#FFB800]" />
             )}
           </div>
         )}

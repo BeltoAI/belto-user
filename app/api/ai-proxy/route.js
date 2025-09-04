@@ -2,9 +2,62 @@ import { NextResponse } from 'next/server';
 import axios from 'axios';
 
 const endpoints = [
-  'https://670902dce12f.ngrok-free.app/completion', // DeepSeek 8B (Double 3060) - FASTEST (~40 tokens/sec)
-  'https://17f2-71-84-65-200.ngrok-free.app/secure-chat', // DeepSeek 8B (Single 3060) - VERY FAST
-  'http://belto.myftp.biz:9999/v1/chat/completions' // Backup endpoint
+  {
+    url: 'http://bel2ai.duckdns.org:8001/v1/chat/completions',
+    name: 'Llama 3.1 8B Instruct (RTX 3090)',
+    model: 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
+    type: 'chat',
+    context: 16384,
+    parallel: 6
+  },
+  {
+    url: 'http://bel2ai.duckdns.org:8002/v1/completions',
+    name: 'GPT-OSS 20B (RTX 3090)',
+    model: 'gpt-oss-20b.Q8_0.gguf',
+    type: 'completion',
+    context: 8192,
+    parallel: 3
+  },
+  {
+    url: 'http://bigbelto.duckdns.org:8004/v1/completions',
+    name: 'GPT-OSS 20B F16 (RTX 4090)',
+    model: 'gpt-oss-20b-F16.gguf',
+    type: 'completion',
+    context: 8192,
+    slots: 1
+  },
+  {
+    url: 'http://bigbelto.duckdns.org:8005/v1/completions',
+    name: 'Hermes-3 Llama-3.2-3B (RTX 4090)',
+    model: 'Hermes-3-Llama-3.2-3B.Q8_0.gguf',
+    type: 'completion',
+    context: 4096,
+    slots: 1
+  },
+  {
+    url: 'http://minibelto.duckdns.org:8007/v1/completions',
+    name: 'DeepSeek 7B Chat (RTX 3060 Ti)',
+    model: 'deepseek-llm-7b-chat.Q4_K_M.gguf',
+    type: 'completion',
+    context: 8192,
+    slots: 1
+  },
+  {
+    url: 'http://doublebelto.duckdns.org:8008/v1/completions',
+    name: 'GPT-OSS 20B Q4 (Double RTX 3060)',
+    model: 'gpt-oss-20b-Q4_K_M.gguf',
+    type: 'completion',
+    context: 4096,
+    slots: 1
+  },
+  {
+    url: 'http://doublebelto.duckdns.org:8009/v1/completions',
+    name: 'Hermes-3B Q4 (Double RTX 3060)',
+    model: 'Hermes-3-Llama-3.2-3B-Q4_K_M.gguf',
+    type: 'completion',
+    context: 4096,
+    slots: 1
+  }
 ];
 
 // Add a flag to enable fallback responses when all endpoints fail - ENABLED with better logging
@@ -13,8 +66,12 @@ const ENABLE_FALLBACK_RESPONSES = true;
 // 'http://97.90.195.162:9999/v1/chat/completions',
 
 // Endpoint health tracking with circuit breaker pattern
-const endpointStats = endpoints.map(url => ({
-  url,
+const endpointStats = endpoints.map(endpoint => ({
+  url: endpoint.url,
+  name: endpoint.name,
+  model: endpoint.model,
+  type: endpoint.type,
+  context: endpoint.context,
   isAvailable: true,
   failCount: 0,
   lastResponseTime: 0,
@@ -257,15 +314,15 @@ function updateEndpointStats(url, success, responseTime) {
 async function healthCheck() {
   console.log('🔍 Performing health check on all endpoints');
   
-  const checks = endpoints.map(async (url) => {
-    const endpoint = endpointStats.find(e => e.url === url);
+  const checks = endpoints.map(async (endpointConfig) => {
+    const endpoint = endpointStats.find(e => e.url === endpointConfig.url);
     if (!endpoint) return;
     
     try {
       const startTime = Date.now();
       // Use endpoint-specific format for health check
       const testMessages = [{ role: 'user', content: 'test' }];
-      const requestConfig = formatRequestForEndpoint(url, testMessages, process.env.AI_API_KEY || 'test');
+      const requestConfig = formatRequestForEndpoint(endpointConfig.url, testMessages, process.env.AI_API_KEY || 'test');
       
       const response = await axios.post(requestConfig.url, requestConfig.data, {
         timeout: 8000, // Increased timeout for health check
@@ -273,19 +330,19 @@ async function healthCheck() {
       });
       
       const responseTime = Date.now() - startTime;
-      updateEndpointStats(url, true, responseTime);
+      updateEndpointStats(endpointConfig.url, true, responseTime);
       
       // Parse response to get content for logging
-      const parsedResponse = parseResponseFromEndpoint(response, url);
-      console.log(`✅ Health check for ${url}: OK (${responseTime}ms)`);
+      const parsedResponse = parseResponseFromEndpoint(response, endpointConfig.url);
+      console.log(`✅ Health check for ${endpointConfig.name}: OK (${responseTime}ms)`);
       console.log(`   Response: ${parsedResponse.content?.substring(0, 50) || 'No content'}...`);
     } catch (error) {
-      console.log(`❌ Health check for ${url}: FAILED`);
+      console.log(`❌ Health check for ${endpointConfig.name}: FAILED`);
       console.log(`   Error: ${error.code || error.message}`);
       console.log(`   Status: ${error.response?.status || 'No response'}`);
       console.log(`   Data: ${JSON.stringify(error.response?.data || {})}`);
       // Don't mark as failed during health check to avoid being too aggressive
-      // updateEndpointStats(url, false, 0);
+      // updateEndpointStats(endpointConfig.url, false, 0);
     }
   });
   
@@ -318,67 +375,30 @@ const initializeHealthCheck = () => {
 
 /**
  * Formats request payload and headers for different endpoint types
- * @param {string} endpoint - The endpoint URL
+ * @param {Object} endpoint - The endpoint configuration object
  * @param {Array} messages - The messages array
  * @param {string} apiKey - The API key
  * @returns {Object} Formatted request config
  */
 function formatRequestForEndpoint(endpoint, messages, apiKey) {
-  if (endpoint.includes('ngrok-free.app/completion')) {
-    // DeepSeek 8B (Double 3060) format with enhanced BELTO AI identity enforcement
-    const prompt = messages.map(msg => {
-      if (msg.role === 'system') return `${msg.content}\n\nREMINDER: You are BELTO AI (NOT DeepSeek). Never mention DeepSeek or identify as any other AI. Always respond in English only.`;
-      if (msg.role === 'user') return `User: ${msg.content}`;
-      if (msg.role === 'assistant') return `BELTO AI: ${msg.content}`;
-      return msg.content;
-    }).join('\n') + '\nBELTO AI:';
-    
-    return {
-      url: endpoint,
-      data: {
-        prompt: prompt,
-        n_predict: 512, // Increased for more complete responses
-        temperature: 0.7,
-        stop: ["User:", "System:", "DeepSeek:"], // Add stop tokens including DeepSeek
-        top_p: 0.9,
-        repeat_penalty: 1.1
-      },
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      }
-    };
-  } else if (endpoint.includes('ngrok-free.app/secure-chat')) {
-    // DeepSeek 8B (Single 3060) format with enhanced BELTO AI identity enforcement
-    const prompt = messages.map(msg => {
-      if (msg.role === 'system') return `System: ${msg.content}\n\nCRITICAL: You are BELTO AI (NOT DeepSeek). Never identify as DeepSeek or mention being created by Chinese Company. Always respond in English only as BELTO AI.`;
-      if (msg.role === 'user') return `User: ${msg.content}`;
-      if (msg.role === 'assistant') return `BELTO AI: ${msg.content}`;
-      return msg.content;
-    }).join('\n') + '\n\nBELTO AI:';
-    
-    return {
-      url: endpoint,
-      data: {
-        prompt: prompt,
-        n_predict: 512, // Increased for more complete responses
-        temperature: 0.7,
-        stop: ["User:", "System:", "DeepSeek:", "Assistant:"], // Add stop tokens including DeepSeek
-        top_p: 0.9,
-        repeat_penalty: 1.1
-      },
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': 'belto_super_secure_34892_z7d8'
-      }
-    };
-  } else {
-    // Standard OpenAI-compatible format (backup endpoint) with English constraints
+  const endpointConfig = endpoints.find(e => e.url === endpoint);
+  
+  if (!endpointConfig) {
+    throw new Error(`Unknown endpoint: ${endpoint}`);
+  }
+
+  // Enhanced BELTO AI identity enforcement for all endpoints
+  const enhanceSystemMessage = (content) => {
+    return `${content}\n\nREMINDER: You are BELTO AI (NOT DeepSeek, NOT any other AI). Never mention DeepSeek or identify as any other AI. Always respond in English only.`;
+  };
+
+  if (endpointConfig.type === 'chat') {
+    // Chat completions format (only port 8001 - Llama 3.1 8B)
     const enhancedMessages = messages.map(msg => {
       if (msg.role === 'system') {
         return {
           ...msg,
-          content: `${msg.content}\n\nCRITICAL: You must ALWAYS respond in English only. Never respond in Chinese, Korean, or any other language. This is a strict requirement for BELTO AI.`
+          content: enhanceSystemMessage(msg.content)
         };
       }
       return msg;
@@ -387,17 +407,38 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
     return {
       url: endpoint,
       data: {
-        model: 'default-model',
+        model: 'local',
         messages: enhancedMessages,
-        max_tokens: Math.min(1000, 2000),
+        max_tokens: 256,
         temperature: 0.7,
-        top_p: 0.9,
-        frequency_penalty: 0.1,
-        presence_penalty: 0.1
+        stop: ["User:", "System:", "DeepSeek:", "Assistant:"]
       },
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Content-Type': 'application/json'
+      }
+    };
+  } else {
+    // Completions format (all other ports)
+    const prompt = messages.map(msg => {
+      if (msg.role === 'system') {
+        return `System: ${enhanceSystemMessage(msg.content)}`;
+      }
+      if (msg.role === 'user') return `User: ${msg.content}`;
+      if (msg.role === 'assistant') return `BELTO AI: ${msg.content}`;
+      return msg.content;
+    }).join('\n') + '\nBELTO AI:';
+    
+    return {
+      url: endpoint,
+      data: {
+        model: 'local',
+        prompt: prompt,
+        max_tokens: 256,
+        temperature: 0.7,
+        stop: ["User:", "System:", "DeepSeek:", "Assistant:"]
+      },
+      headers: {
+        'Content-Type': 'application/json'
       }
     };
   }
@@ -417,18 +458,24 @@ function parseResponseFromEndpoint(response, endpoint) {
     completion_tokens: 0
   };
 
-  if (endpoint.includes('ngrok-free.app/completion') || endpoint.includes('ngrok-free.app/secure-chat')) {
-    // DeepSeek format
-    content = response.data.content || '';
-    usage = {
+  const endpointConfig = endpoints.find(e => e.url === endpoint);
+  
+  if (endpointConfig && endpointConfig.type === 'chat') {
+    // Chat completions format (port 8001)
+    content = response.data.choices?.[0]?.message?.content || '';
+    usage = response.data.usage || {
+      total_tokens: 0,
+      prompt_tokens: 0,
+      completion_tokens: 0
+    };
+  } else {
+    // Completions format (all other ports)
+    content = response.data.choices?.[0]?.text || response.data.content || '';
+    usage = response.data.usage || {
       total_tokens: response.data.tokens_predicted || 0,
       prompt_tokens: response.data.tokens_evaluated || 0,
       completion_tokens: response.data.tokens_predicted || 0
     };
-  } else {
-    // Standard OpenAI format
-    content = response.data.choices?.[0]?.message?.content || '';
-    usage = response.data.usage || usage;
   }
 
   // Clean up response content to prevent unwanted additions
@@ -928,7 +975,7 @@ As BELTO AI, you are processing ${documentTypes} file(s) for educational purpose
     }
 
     let attemptedEndpoints = new Set(); // Track which endpoints we've tried
-    let endpointAttemptOrder = [...endpoints];
+    let endpointAttemptOrder = [...endpoints.map(e => e.url)];
     let endpointIndex = 0;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -936,7 +983,7 @@ As BELTO AI, you are processing ${documentTypes} file(s) for educational purpose
         // For attachments, rotate through all endpoints before fallback
         let selectedEndpoint;
         if (hasAttachments) {
-          selectedEndpoint = endpointAttemptOrder[endpointIndex % endpointAttemptOrder.length];
+          selectedEndpoint = endpoints[endpointIndex % endpoints.length].url;
           endpointIndex++;
         } else {
           selectedEndpoint = selectEndpoint();
@@ -961,18 +1008,21 @@ As BELTO AI, you are processing ${documentTypes} file(s) for educational purpose
         console.log(`Attempt ${attempt}: Selected endpoint for request: ${selectedEndpoint}`);
         
         // Format request for the specific endpoint type
-        const requestConfig = formatRequestForEndpoint(selectedEndpoint, messages, apiKey);
+        const requestConfig = formatRequestForEndpoint(selectedEndpoint, optimizedMessages, apiKey);
         
         // Add detailed logging for debugging
+        const endpointConfig = endpoints.find(e => e.url === selectedEndpoint);
         console.log('🔍 Request details:', {
           endpoint: selectedEndpoint,
+          endpointName: endpointConfig?.name || 'Unknown',
+          model: endpointConfig?.model || 'Unknown',
+          type: endpointConfig?.type || 'Unknown',
           timeout: requestTimeout,
           payloadSize: JSON.stringify(requestConfig.data).length,
           messageCount: messages.length,
           attemptedEndpoints: Array.from(attemptedEndpoints),
           apiKeyPresent: !!apiKey,
-          apiKeyLength: apiKey ? apiKey.length : 0,
-          requestType: selectedEndpoint.includes('ngrok-free.app') ? 'DeepSeek' : 'OpenAI-compatible'
+          apiKeyLength: apiKey ? apiKey.length : 0
         });
         
         // Start timing the request for performance tracking
@@ -1225,6 +1275,10 @@ export async function GET(request) {
     status: 'online',
     endpoints: endpointStats.map(stat => ({
       url: stat.url,
+      name: stat.name,
+      model: stat.model,
+      type: stat.type,
+      context: stat.context,
       isAvailable: stat.isAvailable,
       failCount: stat.failCount,
       lastResponseTime: stat.lastResponseTime,
@@ -1232,6 +1286,8 @@ export async function GET(request) {
       circuitBreakerOpen: stat.circuitBreakerOpen,
       lastChecked: new Date(stat.lastChecked).toISOString()
     })),
+    totalEndpoints: endpoints.length,
+    availableEndpoints: endpointStats.filter(e => e.isAvailable && !e.circuitBreakerOpen).length,
     apiKeyConfigured: !!process.env.AI_API_KEY,
     timestamp: new Date().toISOString()
   });

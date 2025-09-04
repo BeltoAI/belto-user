@@ -21,7 +21,8 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
     ethnicity: ''
   });
   const [profileImage, setProfileImage] = useState(null);
-  const [previewImage, setPreviewImage] = useState('/user.png');
+  // Start empty; UI will render an icon if no image
+  const [previewImage, setPreviewImage] = useState('');
   const [userStats, setUserStats] = useState({
     totalPrompts: 0,
     totalLikes: 0,
@@ -379,13 +380,19 @@ const ProfileInformation = ({ user, onUserUpdate }) => {
           {/* Profile Picture */}
           <div className="flex-shrink-0">
             <div className="relative w-32 h-32">
-              <Image
-                src={previewImage}
-                alt="Profile Picture"
-                width={128}
-                height={128}
-                className="w-32 h-32 rounded-full object-cover border-4 border-[#FFB800]"
-              />
+              {previewImage && previewImage.trim() !== '' ? (
+                <Image
+                  src={previewImage}
+                  alt="Profile Picture"
+                  width={128}
+                  height={128}
+                  className="w-32 h-32 rounded-full object-cover border-4 border-[#FFB800]"
+                />
+              ) : (
+                <div className="w-32 h-32 rounded-full border-4 border-[#FFB800] bg-[#2a2a2a] grid place-items-center">
+                  <User className="w-10 h-10 text-[#FFB800]" />
+                </div>
+              )}
               {isEditing && (
                 <label className="absolute bottom-0 right-0 bg-[#FFB800] p-2 rounded-full cursor-pointer hover:bg-[#FFD700] transition-colors">
                   <Camera className="w-4 h-4 text-black" />

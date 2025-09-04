@@ -138,7 +138,8 @@ const BeltoMainPage = () => {
       // Create the message object
       const messagePayload = {
         isBot: false,
-        avatar: user.profileImage || '/user.png',
+        // Prefer stored profileImage then Google picture; leave empty for icon fallback
+        avatar: user.profileImage || user.picture || '',
         name: user.username,
         message: inputText.trim(),
         suggestions: [],
