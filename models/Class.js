@@ -40,18 +40,10 @@ const ClassSchema = new mongoose.Schema({
   },
   aiSettings: {
     model: {
-          type: String,
-          enum: [
-            'Llama 3.1 8B Instruct (RTX 3090)',
-            'GPT-OSS 20B (RTX 3090)',
-            'GPT-OSS 20B F16 (RTX 4090)',
-            'Hermes-3 Llama-3.2-3B (RTX 4090)',
-            'DeepSeek 7B Chat (RTX 3060 Ti)',
-            'GPT-OSS 20B Q4 (Double RTX 3060)',
-            'Hermes-3B Q4 (Double RTX 3060)'
-          ],
-          default: 'Llama 3.1 8B Instruct (RTX 3090)'
-        },
+      type: String,
+      enum: ['Llama 3.1 8B', 'GPT-OSS 20B', 'RTX 4090 Models', 'DeepSeek-7B Chat'],
+      default: 'Llama 3.1 8B'
+    },
     copyPasteRestriction: {
       type: Boolean,
       default: false
@@ -71,8 +63,8 @@ const ClassSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Lecture'
   }]
-}, { 
-  timestamps: true 
+}, {
+  timestamps: true
 });
 
 export default mongoose.models.Class || mongoose.model('Class', ClassSchema);
