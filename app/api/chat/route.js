@@ -231,30 +231,52 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Session does not belong to this user' }, { status: 403 });
     }
 
-    // Find the message to delete
-    const messageExists = session.messages.some(msg => msg._id.toString() === messageId);
-    if (!messageExists) {
+    // Find the message to delete and its index
+    const messageIndex = session.messages.findIndex(msg => msg._id.toString() === messageId);
+    if (messageIndex === -1) {
       console.error('❌ Message not found in session:', messageId);
       return NextResponse.json({ error: 'Message not found in session' }, { status: 404 });
     }
 
-    // Remove the message from the messages array
-    const originalCount = session.messages.length;
-    session.messages = session.messages.filter(
-      msg => msg._id.toString() !== messageId
-    );
+    const messageToDelete = session.messages[messageIndex];
+    const messagesToDelete = [messageIndex];
 
-    if (session.messages.length === originalCount) {
-      console.error('❌ Message was not removed');
+    // Determine if we need to delete the paired message
+    if (messageToDelete.isBot && messageIndex > 0) {
+      // Bot message - check if previous message is a user message
+      const prevMessage = session.messages[messageIndex - 1];
+      if (!prevMessage.isBot) {
+        messagesToDelete.unshift(messageIndex - 1); // Add previous user message
+        console.log('🔗 Deleting bot message and its paired user message');
+      }
+    } else if (!messageToDelete.isBot && messageIndex + 1 < session.messages.length) {
+      // User message - check if next message is a bot message
+      const nextMessage = session.messages[messageIndex + 1];
+      if (nextMessage.isBot) {
+        messagesToDelete.push(messageIndex + 1); // Add next bot message
+        console.log('🔗 Deleting user message and its paired bot message');
+      }
+    }
+
+    // Remove the message(s) from the messages array (remove in reverse order to maintain indices)
+    const originalCount = session.messages.length;
+    for (let i = messagesToDelete.length - 1; i >= 0; i--) {
+      session.messages.splice(messagesToDelete[i], 1);
+    }
+
+    const deletedCount = originalCount - session.messages.length;
+    if (deletedCount === 0) {
+      console.error('❌ No messages were removed');
       return NextResponse.json({ error: 'Failed to remove message' }, { status: 500 });
     }
 
     // Save the session
     try {
       await session.save();
-      console.log('✅ Message deleted successfully:', {
+      console.log('✅ Message(s) deleted successfully:', {
         sessionId: sessionId.substring(0, 8) + '...',
         messageId: messageId.substring(0, 8) + '...',
+        deletedCount,
         remainingMessages: session.messages.length
       });
     } catch (saveError) {
@@ -266,7 +288,8 @@ export async function DELETE(request) {
     }
 
     return NextResponse.json({ 
-      message: 'Message deleted successfully',
+      message: `${deletedCount} message(s) deleted successfully`,
+      deletedCount,
       remainingMessages: session.messages.length,
       success: true
     });
