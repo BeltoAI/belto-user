@@ -99,14 +99,20 @@ const Sidebar = () => {
           if (lecturesResponse.ok) {
             const { lectures } = await lecturesResponse.json();
             lectures.forEach(lecture => {
+              // Store with both possible key formats to handle ObjectId inconsistencies
+              const lectureId = String(lecture._id);
+              lectureDetailsMap[lectureId] = lecture;
               lectureDetailsMap[lecture._id] = lecture;
             });
           }
         }
         setLectureDetails(lectureDetailsMap);
 
-        // Extract all lectures from active joined classes
-        const allLectures = activeClasses.reduce((acc, cls) => [...acc, ...cls.lectures], []);
+        // Extract all lectures from active joined classes (ensure string format)
+        const allLectures = activeClasses.reduce((acc, cls) => {
+          const lectureIds = cls.lectures.map(lectureId => String(lectureId));
+          return [...acc, ...lectureIds];
+        }, []);
         setLectures(allLectures);
 
         // Initialize sessions with lecture titles
@@ -221,7 +227,9 @@ const Sidebar = () => {
       
       try {
         // Create a new session if one doesn't exist
-        const lectureTitle = lectureDetails[lectureId]?.title || `Lecture ${lectureId}`;
+        const lectureTitle = lectureDetails[lectureId]?.title || 
+                            lectureDetails[String(lectureId)]?.title || 
+                            `Lecture ${lectureId}`;
         const newSession = await createSessionForLecture(user._id, lectureId, lectureTitle);
         
         // Update the lectureSessions state
@@ -259,7 +267,9 @@ const Sidebar = () => {
       await loadSession(lectureSession.session._id);
       
       // Get lecture title for confirmation
-      const lectureTitle = lectureDetails[lectureId]?.title || `Lecture ${lectureId}`;
+      const lectureTitle = lectureDetails[lectureId]?.title || 
+                          lectureDetails[String(lectureId)]?.title || 
+                          `Lecture ${lectureId}`;
       
       setIsOpen(false); // Close sidebar on selection
       toast.success(`Switched to ${lectureTitle}`);
@@ -413,7 +423,9 @@ const Sidebar = () => {
                             ) : (
                               class_.lectures.map((lecture) => {
                                 const sessionInfo = lectureSessions[lecture];
-                                const lectureInfo = lectureDetails[lecture];
+                                // Handle ObjectId format inconsistencies between class.lectures and lectureDetails keys
+                                const lectureInfo = lectureDetails[lecture] || 
+                                                  lectureDetails[String(lecture)];
                                 const displayTitle = lectureInfo?.title || 'Untitled Lecture';
 
                                 return (

@@ -115,19 +115,22 @@ export async function POST(req) {
       );
     }
 
-    // Create the message object with proper validation
+    // Create the message object with proper validation and defaults
     const newMessage = {
       isBot: Boolean(message.isBot),
-      avatar: message.avatar || (message.isBot ? '/logo.png' : ''),
-      name: message.name || (message.isBot ? 'BELTO' : 'User'),
+      avatar: String(message.avatar || '').trim() || (message.isBot ? '/logo.png' : ''),
+      name: String(message.name || '').trim() || (message.isBot ? 'BELTO' : 'User'),
       message: String(message.message || '').trim(),
       suggestions: Array.isArray(message.suggestions) ? message.suggestions : [],
-      attachments: Array.isArray(message.attachments) ? message.attachments : [],
+      attachments: Array.isArray(message.attachments) ? message.attachments.map(att => ({
+        name: String(att.name || ''),
+        content: String(att.content || '')
+      })) : [],
       timestamp: message.timestamp ? new Date(message.timestamp) : new Date(),
-      tokenUsage: message.tokenUsage || {
-        total_tokens: 0,
-        prompt_tokens: 0,
-        completion_tokens: 0
+      tokenUsage: {
+        total_tokens: Number(message.tokenUsage?.total_tokens) || 0,
+        prompt_tokens: Number(message.tokenUsage?.prompt_tokens) || 0,
+        completion_tokens: Number(message.tokenUsage?.completion_tokens) || 0
       }
     };
 

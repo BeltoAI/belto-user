@@ -196,8 +196,20 @@ export const useChatHandlers = (
             message: userMessage
           })
         }).then(async (userRes) => {
-          if (!userRes.ok) throw new Error('Failed to save user message');
-          return userRes.json();
+          if (!userRes.ok) {
+            const errorText = await userRes.text();
+            console.error('❌ Failed to save user message:', {
+              status: userRes.status,
+              statusText: userRes.statusText,
+              error: errorText
+            });
+            throw new Error(`Failed to save user message: ${userRes.status} - ${errorText}`);
+          }
+          const result = await userRes.json();
+          console.log('✅ User message saved successfully:', {
+            messageId: result._id?.substring(0, 8) + '...'
+          });
+          return result;
         }),
         
         // Generate AI response in parallel
@@ -215,8 +227,10 @@ export const useChatHandlers = (
         setMessages(prev => prev.map(msg => 
           msg.id === userMessage.id ? { ...msg, _id: savedUserMessage.value._id } : msg
         ));
+        console.log('✅ User message updated with database ID');
       } else {
-        console.error('Failed to save user message:', savedUserMessage.reason);
+        console.error('❌ Failed to save user message:', savedUserMessage.reason);
+        toast.error('User message displayed but not saved to database: ' + savedUserMessage.reason.message);
       }
 
       // Handle AI response result
@@ -286,25 +300,49 @@ export const useChatHandlers = (
         updateTokenUsage(messageTokenUsage);
         handleMessageUpdate([...messages, userMessage, botMessage]);
 
-        const botRes = await fetch('/api/chat', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          },
-          body: JSON.stringify({
-            userId,
-            sessionId: currentSessionId,
-            message: botMessage
-          })
+        console.log('💾 Saving bot message to database...', {
+          messageLength: botMessage.message.length,
+          hasTokenUsage: !!botMessage.tokenUsage,
+          sessionId: currentSessionId?.substring(0, 8) + '...'
         });
 
-        if (!botRes.ok) throw new Error('Failed to save bot message');
+        try {
+          const botRes = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+              userId,
+              sessionId: currentSessionId,
+              message: botMessage
+            })
+          });
 
-        const savedBotMessage = await botRes.json();
-        setMessages(prev => prev.map(msg => 
-          msg.id === botMessage.id ? { ...msg, _id: savedBotMessage._id } : msg
-        ));
+          if (!botRes.ok) {
+            const errorText = await botRes.text();
+            console.error('❌ Failed to save bot message:', {
+              status: botRes.status,
+              statusText: botRes.statusText,
+              error: errorText
+            });
+            throw new Error(`Failed to save bot message: ${botRes.status} - ${errorText}`);
+          }
+
+          const savedBotMessage = await botRes.json();
+          console.log('✅ Bot message saved successfully:', {
+            messageId: savedBotMessage._id?.substring(0, 8) + '...'
+          });
+          
+          setMessages(prev => prev.map(msg => 
+            msg.id === botMessage.id ? { ...msg, _id: savedBotMessage._id } : msg
+          ));
+        } catch (botSaveError) {
+          console.error('💥 Error saving bot message:', botSaveError);
+          // Don't fail the entire operation, but show a warning
+          toast.error('Bot message displayed but not saved to database: ' + botSaveError.message);
+        }
       }
 
       clearInputs();
@@ -335,22 +373,47 @@ export const useChatHandlers = (
     try {
       const messageToDelete = messages[index];
       if (!messageToDelete?._id || !currentSessionId) {
+        console.error('Delete validation failed:', {
+          hasMessageId: !!messageToDelete?._id,
+          hasSessionId: !!currentSessionId,
+          messageToDelete
+        });
         throw new Error('Invalid message or session');
       }
 
       const loadingToast = toast.loading('Deleting message...');
 
-      const response = await fetch(
-        `/api/chat/${messageToDelete._id}?sessionId=${currentSessionId}`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
-        }
-      );
+      console.log('🗑️ Attempting to delete message:', {
+        messageId: messageToDelete._id.substring(0, 8) + '...',
+        sessionId: currentSessionId.substring(0, 8) + '...',
+        messageType: messageToDelete.isBot ? 'bot' : 'user'
+      });
 
-      if (!response.ok) throw new Error('Failed to delete message');
+      const response = await fetch('/api/chat', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          userId,
+          sessionId: currentSessionId,
+          messageId: messageToDelete._id
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Delete request failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText
+        });
+        throw new Error(`Failed to delete message: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ Message deleted successfully:', result);
 
       // Remove the message(s) from UI but DO NOT rollback counters
       if (!messageToDelete.isBot && index + 1 < messages.length) {
@@ -372,10 +435,10 @@ export const useChatHandlers = (
       toast.dismiss(loadingToast);
       toast.success('Message deleted successfully');
     } catch (error) {
-      console.error('Error deleting message:', error);
+      console.error('💥 Error deleting message:', error);
       toast.error(error.message || 'Failed to delete message');
     }
-  }, [messages, currentSessionId, setMessages]);
+  }, [messages, currentSessionId, setMessages, userId]);
 
   return {
     handleNewMessage,

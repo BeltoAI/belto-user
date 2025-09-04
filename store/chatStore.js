@@ -218,6 +218,8 @@ const useChatStore = create((set, get) => ({
   },
 
   loadSession: async (sessionId) => {
+    console.log('🔄 Loading session:', sessionId?.substring(0, 8) + '...');
+    
     const userId = get().userId;
     
     if (!userId) {
@@ -226,8 +228,9 @@ const useChatStore = create((set, get) => ({
         if (!response.ok) throw new Error('Failed to fetch user');
         const userData = await response.json();
         set({ userId: userData._id }); // Set the userId in the store
+        console.log('✅ User ID set from auth:', userData._id?.substring(0, 8) + '...');
       } catch (error) {
-        console.error('Error fetching user data:', error);
+        console.error('❌ Error fetching user data:', error);
         throw new Error('No userId available');
       }
     }
@@ -236,15 +239,18 @@ const useChatStore = create((set, get) => ({
       set({ 
         currentSessionId: sessionId,
         isLoading: true,
-        messages: []
+        messages: [] // Clear previous messages
       });
       
+      console.log('📖 Fetching chat history for session...');
       await get().fetchChatHistory();
+      
+      console.log('✅ Session loaded successfully');
       set({ isLoading: false });
       return true;
     } catch (error) {
-      console.error('Failed to load session:', error);
-      set({ isLoading: false });
+      console.error('💥 Failed to load session:', error);
+      set({ isLoading: false, messages: [] });
       return false;
     }
   },

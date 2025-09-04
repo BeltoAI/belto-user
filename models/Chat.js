@@ -8,11 +8,13 @@ const messageSchema = new mongoose.Schema({
   },
   avatar: {
     type: String,
-    required: true
+    required: false, // Changed to false to allow empty avatars
+    default: '' // Provide default empty string
   },
   name: {
     type: String,
-    required: true
+    required: true,
+    default: 'User' // Provide default name
   },
   message: {
     type: String,

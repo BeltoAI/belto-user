@@ -1,31 +1,18 @@
 import connectDB from '@/lib/db';
 import mongoose from 'mongoose';
 import { NextResponse } from 'next/server';
-
-// Define Class Schema if not already defined elsewhere
-const ClassSchema = new mongoose.Schema({
-  name: String,
-  lectures: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Lecture'
-  }]
-});
-
-// Define Lecture Schema if not already defined elsewhere
-const LectureSchema = new mongoose.Schema({
-  title: String
-});
-
-// Get or create models
-const Class = mongoose.models.Class || mongoose.model('Class', ClassSchema);
-const Lecture = mongoose.models.Lecture || mongoose.model('Lecture', LectureSchema);
+import Class from '@/models/Class';
+import Lecture from '@/models/Lecture';
 
 export async function GET(request, { params }) {
   try {
     // Wait for params to be available
     const { classId } = await params;
 
+    console.log('📚 Fetching lectures for class:', classId);
+
     if (!mongoose.isValidObjectId(classId)) {
+      console.error('❌ Invalid class ID format:', classId);
       return NextResponse.json(
         { error: 'Invalid class ID format' },
         { status: 400 }
@@ -34,26 +21,33 @@ export async function GET(request, { params }) {
 
     await connectDB();
     
-    // Find the class and populate lectures
+    // Find the class and populate lectures with full details
     const classData = await Class.findById(classId)
-      .populate('lectures', 'title')
+      .populate({
+        path: 'lectures',
+        select: 'title description startDate endDate status materials'
+      })
       .lean();
 
     if (!classData) {
+      console.error('❌ Class not found:', classId);
       return NextResponse.json(
         { error: 'Class not found' },
         { status: 404 }
       );
     }
 
+    const lectures = classData.lectures || [];
+    console.log('✅ Found lectures:', lectures.map(l => ({ id: l._id, title: l.title })));
+
     return NextResponse.json({ 
-      lectures: classData.lectures || [] 
+      lectures: lectures
     }, { status: 200 });
 
   } catch (error) {
-    console.error('Error fetching lecture titles:', error);
+    console.error('💥 Error fetching lecture titles:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error: ' + error.message },
       { status: 500 }
     );
   }
