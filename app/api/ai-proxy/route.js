@@ -463,7 +463,7 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
         messages: enhancedMessages,
         max_tokens: 256,
         temperature: 0.7,
-        stop: ["User:", "System:", "DeepSeek:", "Assistant:"]
+        stop: ["User:", "System:", "DeepSeek:", "Assistant:", "We need to", "The user", "So we", "Let's", "CRITICAL", "REMINDER:"]
       },
       headers: {
         'Content-Type': 'application/json'
@@ -487,7 +487,7 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
         prompt: prompt,
         max_tokens: 256,
         temperature: 0.7,
-        stop: ["User:", "System:", "DeepSeek:", "Assistant:"]
+        stop: ["User:", "System:", "DeepSeek:", "Assistant:", "We need to", "The user", "So we", "Let's", "CRITICAL", "REMINDER:"]
       },
       headers: {
         'Content-Type': 'application/json'
@@ -549,23 +549,50 @@ function cleanResponseContent(content) {
     return '';
   }
 
-  // Remove common unwanted patterns that sometimes appear in responses
+  // STEP 1: Remove system reasoning artifacts and internal commentary
   let cleanedContent = content
+    // First, extract the actual response content that comes after reasoning
+    .replace(/.*?(?:respond with|say|produce):\s*/gi, '')
+    
+    // Remove system reasoning patterns at the beginning
+    .replace(/^(?:We need to|The user|So we|Let's|We must)[^.]*[.:]?\s*/gi, '')
+    
+    // Remove critical identity rules exposure
+    .replace(/CRITICAL IDENTITY RULES[^:]*:[^}]*}/gis, '')
+    .replace(/CRITICAL IDENTITY RULES FOR BELTO AI[^:]*:[^}]*}/gis, '')
+    .replace(/REMINDER:[^}]*}/gis, '')
+    
+    // Remove formatting artifacts
+    .replace(/<\|end\|><\|start\|>assistant<\|channel\|>final<\|message\|>/gi, '')
+    .replace(/<\|[^|]*\|>/g, '')
+    .replace(/\|start\||\|end\|/gi, '')
+    
     // Remove any mentions of being DeepSeek or other AI systems
     .replace(/I am DeepSeek[^.]*\./gi, '')
     .replace(/As DeepSeek[^,]*,?/gi, '')
     .replace(/I'm DeepSeek[^.]*\./gi, '')
+    .replace(/DeepSeek[^.]*\./gi, '')
     
-    // Remove unnecessary introductory phrases that add no value
+    // Remove meta-commentary about response generation
+    .replace(/That is (fine|good|correct)[^.]*\./gi, '')
+    .replace(/Now[,\s]*(everything is working fine|let's produce|we can)[^.]*\./gi, '')
+    .replace(/The guidelines say[^.]*\./gi, '')
+    .replace(/According to[^.]*guidelines[^.]*\./gi, '')
+    
+    // Remove unnecessary system-like introductions
     .replace(/^(Sure,?\s*|Of course,?\s*|Certainly,?\s*|Absolutely,?\s*)+/gi, '')
+    .replace(/As requested[^,]*,?\s*/gi, '')
+    .replace(/As instructed[^,]*,?\s*/gi, '')
     
-    // Fix code formatting issues - ensure proper line breaks in code blocks
+    // Clean up spacing
+    .replace(/\s+/g, ' ')
+    .trim()
+    
+    // Clean up code formatting - ensure proper line breaks in code blocks
     .replace(/```(\w+)\s*([^`]+)```/g, (match, language, code) => {
-      // Clean up the code inside code blocks
       let cleanCode = code
-        // Fix common single-line formatting issues
+        // Fix Python function formatting
         .replace(/def\s+(\w+)\([^)]*\):\s*([^#\n]+)/g, (match, funcName, funcBody) => {
-          // Python function formatting
           const formatted = funcBody
             .replace(/;\s*/g, '\n    ')
             .replace(/return\s+/g, '\n    return ')
@@ -584,35 +611,64 @@ function cleanResponseContent(content) {
         .replace(/;\s*(?=\w)/g, ';\n    ')
         .replace(/{\s*(?=\w)/g, '{\n    ')
         .replace(/}\s*(?=\w)/g, '}\n    ')
-        // Clean up extra whitespace
         .replace(/\s+/g, ' ')
         .trim();
       
       return `\`\`\`${language}\n${cleanCode}\n\`\`\``;
-    })
+    });
+
+  // STEP 2: Split into sentences and filter out system reasoning
+  const sentences = cleanedContent.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 0);
+  const cleanSentences = sentences.filter(sentence => {
+    const lower = sentence.toLowerCase();
     
+    // Filter out system reasoning patterns
+    if (lower.includes('we need to') || 
+        lower.includes('the user') || 
+        lower.includes('so we respond') ||
+        lower.includes('let\'s say') ||
+        lower.includes('we must') ||
+        lower.includes('the conversation') ||
+        lower.includes('critical identity') ||
+        lower.includes('guidelines say') ||
+        lower.includes('that is fine') ||
+        lower.includes('now everything')) {
+      return false;
+    }
+    
+    // Keep actual responses
+    return true;
+  });
+
+  // STEP 3: Reconstruct clean content
+  if (cleanSentences.length > 0) {
+    cleanedContent = cleanSentences.join(' ').replace(/\s+/g, ' ');
+  }
+
+  // STEP 4: Final cleanup
+  cleanedContent = cleanedContent
     // Clean up multiple newlines and extra whitespace
     .replace(/\n{3,}/g, '\n\n')
     .replace(/\s{3,}/g, ' ')
-    
-    // Remove trailing whitespace and normalize line endings
+    .replace(/\.\s*\./g, '.')
+    .replace(/\s+([.!?])/g, '$1')
     .trim();
 
-  // Check for and remove duplicate or repetitive content patterns
-  const lines = cleanedContent.split('\n');
-  const uniqueLines = [];
-  const seenContent = new Set();
-
-  for (const line of lines) {
-    const normalizedLine = line.trim().toLowerCase();
-    // Only add line if it's not a duplicate or very similar to previous content
-    if (normalizedLine.length > 0 && !seenContent.has(normalizedLine)) {
-      uniqueLines.push(line);
-      seenContent.add(normalizedLine);
+  // STEP 5: Ensure the response starts appropriately for BELTO AI
+  if (cleanedContent.length > 0 && !cleanedContent.match(/^(Hello|Hi|I am BELTO|I'm BELTO)/i)) {
+    // For greeting responses, make sure they're properly formatted
+    if (cleanedContent.toLowerCase().includes('hello') || cleanedContent.toLowerCase().includes('how can i help')) {
+      // This is already a proper greeting, keep as is
+    } else if (cleanedContent.length < 50 && cleanedContent.includes('!')) {
+      // Short exclamatory responses are likely proper greetings
+    } else {
+      // For other responses, ensure they don't start with system artifacts
+      const firstChar = cleanedContent.charAt(0);
+      if (firstChar !== firstChar.toUpperCase()) {
+        cleanedContent = firstChar.toUpperCase() + cleanedContent.slice(1);
+      }
     }
   }
-
-  cleanedContent = uniqueLines.join('\n');
 
   return cleanedContent;
 }
@@ -854,34 +910,24 @@ CRITICAL IDENTITY RULES FOR BELTO AI:
       console.log('System message metrics:', { hasAttachments, totalContentLength });
       
       // COMPREHENSIVE system messages for accurate responses
-      const baseSystemPrompt = `You are BELTO AI (NOT DeepSeek, NOT any other AI). You MUST NEVER identify as DeepSeek, GPT, Claude, or any other AI system.
+      const baseSystemPrompt = `You are BELTO AI, an educational assistant designed to help students with academic tasks. Your responses should be direct, helpful, and focused only on answering the user's question.
 
-CRITICAL IDENTITY RULES:
-- Your name is BELTO AI and ONLY BELTO AI
-- You are an intelligent educational assistant designed specifically for students
+IDENTITY:
+- Your name is BELTO AI
+- You are an educational assistant for students
 - When asked "who are you?" respond: "I am BELTO AI, your educational assistant designed to help students with academic tasks and educational activities"
-- NEVER mention DeepSeek, Chinese Company, or any other AI system
-- ALWAYS respond in English only - never in Chinese, Korean, or any other language
+- Always respond in English only
 
-RESPONSE QUALITY RULES:
-- Answer ONLY the user's specific question - do not add unrelated information
-- Stop after answering the question completely - do not continue with additional topics
-- Do not generate follow-up questions unless specifically asked
-- Keep responses focused and relevant to the user's request
-- When providing code examples, ALWAYS format them with proper line breaks
-- Put each statement on a separate line with proper indentation
-- Use proper markdown code blocks with language specification
-- Never put multiple lines of code on a single line
-- Ensure readable, well-formatted code structure
+RESPONSE RULES:
+- Answer only what is asked - do not add unrelated information
+- Be direct and helpful
+- Stop when the question is fully answered
+- Do not explain your reasoning process
+- Do not mention other AI systems
+- For greetings like "hi" or "hello", respond warmly and ask how you can help
+- Keep responses focused and educational
 
-Your core functions:
-1. Provide educational support and academic assistance
-2. Help students with coursework, research, and learning
-3. Explain complex concepts in simple terms
-4. Support academic tasks and educational activities
-5. Maintain helpful, professional, educational tone
-6. Give complete, non-truncated responses
-7. Stay focused on the user's specific request`;
+Your purpose is to provide clear, direct educational support to students.`;
 
       if (!hasAttachments && totalContentLength < 100) {
         // Brief but complete system message for simple requests
@@ -1126,8 +1172,37 @@ As BELTO AI, you are processing ${documentTypes} file(s) for educational purpose
             throw new Error('Empty response content received from AI service');
           }
           
+          // Apply comprehensive response cleaning
+          let finalContent = cleanResponseContent(parsedResponse.content);
+          
+          // Additional safety check for artifacts
+          if (finalContent.includes('We need to') || 
+              finalContent.includes('CRITICAL IDENTITY') ||
+              finalContent.includes('<|') ||
+              finalContent.includes('The user') ||
+              finalContent.includes('So we respond')) {
+            console.log('🧹 Additional artifact cleaning required');
+            finalContent = finalContent
+              .split('\n')
+              .filter(line => {
+                const lower = line.toLowerCase();
+                return !lower.includes('we need to') && 
+                       !lower.includes('critical identity') &&
+                       !lower.includes('the user') &&
+                       !lower.includes('so we respond') &&
+                       !lower.includes('<|');
+              })
+              .join('\n')
+              .trim();
+          }
+          
+          // Ensure we have meaningful content after cleaning
+          if (!finalContent || finalContent.trim().length < 3) {
+            console.log('🔄 Content too short after cleaning, providing fallback');
+            finalContent = "Hello! I'm BELTO AI, your educational assistant. How can I help you with your studies today?";
+          }
+          
           // Apply post-processing rules if provided
-          let finalContent = parsedResponse.content;
           if (body.preferences?.processingRules) {
             console.log('🔧 Applying post-processing rules to response');
             finalContent = applyPostprocessingRules(finalContent, body.preferences.processingRules);
