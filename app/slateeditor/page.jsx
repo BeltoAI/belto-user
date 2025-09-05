@@ -194,7 +194,7 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
     
     // Add listeners once editor is ready
     const initTimer = setTimeout(() => {
-      if (editor.current && editor.current.editor) {
+      if (editor.current && editor.current.editor && editor.current.editor.container) {
         const joditElement = editor.current.editor.container;
         
         // Prevent copy/paste through context menu
@@ -218,7 +218,7 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
       clearTimeout(initTimer);
       
       // Clean up event listeners when component unmounts
-      if (editor.current && editor.current.editor) {
+      if (editor.current && editor.current.editor && editor.current.editor.container) {
         const joditElement = editor.current.editor.container;
         joditElement.removeEventListener('copy', handleDisabledCopyPaste);
         joditElement.removeEventListener('paste', handleDisabledCopyPaste);

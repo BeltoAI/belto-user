@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import Loading from './loading';
+import ErrorBoundary from '../components/ErrorBoundary';
+import SafeLoading from '../components/SafeLoading';
 // Initial state
 const initialState = {
   layout: {
@@ -57,15 +59,45 @@ function appReducer(state, action) {
   }
 }
 
-// Dynamic imports with fixed loading states
-const DynamicChatSection = dynamic(() => import('../chat/page'), {
+// Dynamic imports with enhanced error handling
+const DynamicChatSection = dynamic(() => import('../chat/page').catch(err => {
+  console.error('Failed to load Chat component:', err);
+  return () => (
+    <div className="flex items-center justify-center h-full bg-[#111111] text-white p-4">
+      <div className="text-center">
+        <p className="text-red-400 mb-2">Failed to load Chat component</p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="bg-[#FFB800] text-black px-4 py-2 rounded-lg hover:bg-[#E6A600] transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    </div>
+  );
+}), {
   ssr: false,
-  loading: () => <div className="w-full h-full bg-[#111111] flex items-center justify-center">Loading Chat...</div>
+  loading: () => <SafeLoading componentName="Chat" />
 });
 
-const DynamicJoditTextEditor = dynamic(() => import('../slateeditor/page'), {
+const DynamicJoditTextEditor = dynamic(() => import('../slateeditor/page').catch(err => {
+  console.error('Failed to load Editor component:', err);
+  return () => (
+    <div className="flex items-center justify-center h-full bg-[#1A1A1A] text-white p-4">
+      <div className="text-center">
+        <p className="text-red-400 mb-2">Failed to load Editor component</p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="bg-[#FFB800] text-black px-4 py-2 rounded-lg hover:bg-[#E6A600] transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    </div>
+  );
+}), {
   ssr: false,
-  loading: () => <div className="w-full h-full bg-[#1A1A1A] flex items-center justify-center">Loading Editor...</div>
+  loading: () => <SafeLoading componentName="Editor" />
 });
 
 const LayoutContent = () => {
@@ -168,14 +200,16 @@ const LayoutContent = () => {
         </button>
       </div>
       <div className="flex-1 overflow-hidden">
-        <DynamicChatSection
-          key={searchParams.get('sessionId')}
-          inputText={searchParams.get('inputText')}
-          selectedFiles={state.content.processedFiles}
-          isWideView={true}
-          selectedModel={state.content.selectedModel}
-          initialSessionId={searchParams.get('sessionId')}
-        />
+        <ErrorBoundary componentName="Chat">
+          <DynamicChatSection
+            key={searchParams.get('sessionId')}
+            inputText={searchParams.get('inputText')}
+            selectedFiles={state.content.processedFiles}
+            isWideView={true}
+            selectedModel={state.content.selectedModel}
+            initialSessionId={searchParams.get('sessionId')}
+          />
+        </ErrorBoundary>
       </div>
     </div>
   );
@@ -185,14 +219,16 @@ const LayoutContent = () => {
       <div className={`h-full bg-[#111111] overflow-hidden border-r border-[#262626] transition-all duration-300 ease-in-out ${
         state.layout.isEditorVisible ? 'w-[40%]' : 'w-[90%]'
       }`}>
-        <DynamicChatSection
-          key={searchParams.get('sessionId')}
-          inputText={searchParams.get('inputText')}
-          selectedFiles={state.content.processedFiles}
-          isWideView={state.layout.isWideView}
-          selectedModel={state.content.selectedModel}
-          initialSessionId={searchParams.get('sessionId')}
-        />
+        <ErrorBoundary componentName="Chat">
+          <DynamicChatSection
+            key={searchParams.get('sessionId')}
+            inputText={searchParams.get('inputText')}
+            selectedFiles={state.content.processedFiles}
+            isWideView={state.layout.isWideView}
+            selectedModel={state.content.selectedModel}
+            initialSessionId={searchParams.get('sessionId')}
+          />
+        </ErrorBoundary>
       </div>
 
       <div 
@@ -214,15 +250,17 @@ const LayoutContent = () => {
           />
         </button>
         {state.layout.isEditorVisible && (
-          <DynamicJoditTextEditor
-            isWideView={false}
-            isMobile={false}
-            content={state.content.editorContent}
-            setContent={(content) => dispatch({
-              type: 'SET_CONTENT',
-              payload: { editorContent: content }
-            })}
-          />
+          <ErrorBoundary componentName="Editor">
+            <DynamicJoditTextEditor
+              isWideView={false}
+              isMobile={false}
+              content={state.content.editorContent}
+              setContent={(content) => dispatch({
+                type: 'SET_CONTENT',
+                payload: { editorContent: content }
+              })}
+            />
+          </ErrorBoundary>
         )}
       </div>
     </div>
@@ -231,15 +269,17 @@ const LayoutContent = () => {
   const WideLayout = () => (
     <div className="h-[calc(100vh-48px)]">
       <div className="w-full h-full bg-[#1A1A1A]">
-        <DynamicJoditTextEditor
-          isWideView={true}
-          isMobile={false}
-          content={state.content.editorContent}
-          setContent={(content) => dispatch({
-            type: 'SET_CONTENT',
-            payload: { editorContent: content }
-          })}
-        />
+        <ErrorBoundary componentName="Editor">
+          <DynamicJoditTextEditor
+            isWideView={true}
+            isMobile={false}
+            content={state.content.editorContent}
+            setContent={(content) => dispatch({
+              type: 'SET_CONTENT',
+              payload: { editorContent: content }
+            })}
+          />
+        </ErrorBoundary>
       </div>
       {state.layout.isChatOpen ? (
         <ChatPopup />
@@ -260,25 +300,29 @@ const LayoutContent = () => {
   const MobileLayout = () => (
     <div className="flex flex-col h-[calc(100vh-48px)]">
       <div className="h-1/2 min-h-[300px] bg-[#1A1A1A] overflow-y-auto">
-        <DynamicJoditTextEditor
-          isWideView={false}
-          isMobile={true}
-          content={state.content.editorContent}
-          setContent={(content) => dispatch({
-            type: 'SET_CONTENT',
-            payload: { editorContent: content }
-          })}
-        />
+        <ErrorBoundary componentName="Editor">
+          <DynamicJoditTextEditor
+            isWideView={false}
+            isMobile={true}
+            content={state.content.editorContent}
+            setContent={(content) => dispatch({
+              type: 'SET_CONTENT',
+              payload: { editorContent: content }
+            })}
+          />
+        </ErrorBoundary>
       </div>
       <div className="h-1/2 min-h-[300px] bg-[#111111] overflow-y-auto">
-        <DynamicChatSection
-          key={searchParams.get('sessionId')}
-          inputText={searchParams.get('inputText')}
-          selectedFiles={state.content.processedFiles}
-          isWideView={false}
-          selectedModel={state.content.selectedModel}
-          initialSessionId={searchParams.get('sessionId')}
-        />
+        <ErrorBoundary componentName="Chat">
+          <DynamicChatSection
+            key={searchParams.get('sessionId')}
+            inputText={searchParams.get('inputText')}
+            selectedFiles={state.content.processedFiles}
+            isWideView={false}
+            selectedModel={state.content.selectedModel}
+            initialSessionId={searchParams.get('sessionId')}
+          />
+        </ErrorBoundary>
       </div>
     </div>
   );
