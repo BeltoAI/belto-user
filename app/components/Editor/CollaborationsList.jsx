@@ -47,20 +47,6 @@ const CollaborationsList = ({ onClose, onDocumentSelect }) => {
             console.error('Error fetching documents:', error);
         }
     };
-        try {
-            const response = await fetch(`/api/collaborative-documents?collaborationId=${collaborationId}&email=${userEmail}`);
-            const data = await response.json();
-            
-            if (response.ok) {
-                setDocuments(prev => ({
-                    ...prev,
-                    [collaborationId]: data.data
-                }));
-            }
-        } catch (error) {
-            toast.error(`Error fetching documents: ${error.message}`);
-        }
-    };
 
     const createNewDocument = async () => {
         try {
