@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { updateCursorPosition } from "../sse/route";
+import { broadcastUpdate } from "../sse/route";
 
 export async function POST(req) {
     try {
@@ -12,7 +12,13 @@ export async function POST(req) {
             }, { status: 400 });
         }
         
-        await updateCursorPosition(documentId, userEmail, position);
+        // Broadcast cursor position update to all connected clients
+        await broadcastUpdate(documentId, {
+            type: 'cursor-update',
+            userEmail,
+            position,
+            timestamp: new Date().toISOString()
+        });
         
         return NextResponse.json({
             message: "Cursor position updated successfully"

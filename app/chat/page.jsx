@@ -97,7 +97,7 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel, 
     if (currentSessionId && messages.length > 0) {
       setTimeout(scrollToBottom, 100);
     }
-  }, [currentSessionId, scrollToBottom]);
+  }, [currentSessionId, messages.length, scrollToBottom]);
 
   // Scroll on new messages or AI response
   useEffect(() => {

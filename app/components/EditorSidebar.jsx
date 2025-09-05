@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Image from "next/image";
 import { Palette, Settings, Grid, FileText, Search } from "lucide-react";
 
 // Draggable Divider Component
@@ -145,9 +146,11 @@ const ElementsPanel = ({ onClose, isClosing }) => {
                       key={imgIndex}
                       className="w-20 h-20 flex-shrink-0 bg-[#363636] rounded-lg hover:bg-[#404040] transition-colors cursor-pointer"
                     >
-                      <img
+                      <Image
                         src={img}
                         alt={`${category.title} ${imgIndex + 1}`}
+                        width={80}
+                        height={80}
                         className="w-full h-full object-cover rounded-lg"
                       />
                     </div>

@@ -307,9 +307,10 @@ Your purpose is to support student learning through clear explanations, academic
 
   // Cleanup timeout
   useEffect(() => {
+    const timeoutRef = processingTimeoutRef.current;
     return () => {
-      if (processingTimeoutRef.current) {
-        clearTimeout(processingTimeoutRef.current);
+      if (timeoutRef) {
+        clearTimeout(timeoutRef);
       }
     };
   }, []);

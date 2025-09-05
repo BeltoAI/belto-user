@@ -1,8 +1,18 @@
 import * as pdfjsLib from 'pdfjs-dist/webpack';
 import mammoth from 'mammoth';
 
-const pdfjsWorker = await import('pdfjs-dist/build/pdf.worker.entry');
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+// Initialize PDF.js worker
+const initializePdfWorker = async () => {
+  try {
+    const pdfjsWorker = await import('pdfjs-dist/build/pdf.worker.entry');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+  } catch (error) {
+    console.warn('Failed to load PDF worker:', error);
+  }
+};
+
+// Initialize worker when the module loads
+initializePdfWorker();
 
 // Helper function to convert file to Base64
 const fileToBase64 = (file) => {

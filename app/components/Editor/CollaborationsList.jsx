@@ -11,30 +11,42 @@ const CollaborationsList = ({ onClose, onDocumentSelect }) => {
     const [newDocTitle, setNewDocTitle] = useState('');
 
     useEffect(() => {
+        const fetchCollaborations = async () => {
+            try {
+                const userResponse = await fetch('/api/auth/user');
+                const userData = await userResponse.json();
+                
+                const response = await fetch(`/api/collaboration?email=${userData.email}`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    setCollaborations(data.data);
+                    // Fetch documents for each collaboration
+                    data.data.forEach(collab => fetchDocuments(collab._id, userData.email));
+                }
+            } catch (error) {
+                console.error('Error fetching collaborations:', error);
+            }
+        };
+
         fetchCollaborations();
     }, []);
 
-    const fetchCollaborations = async () => {
+    const fetchDocuments = async (collaborationId, userEmail) => {
         try {
-            const userResponse = await fetch('/api/auth/user');
-            const userData = await userResponse.json();
-            
-            const response = await fetch(`/api/collaboration?email=${userData.email}`);
+            const response = await fetch(`/api/collaborative-documents?collaborationId=${collaborationId}&userEmail=${userEmail}`);
             const data = await response.json();
             
             if (response.ok) {
-                setCollaborations(data.data);
-                // Fetch documents for each collaboration
-                data.data.forEach(collab => fetchDocuments(collab._id, userData.email));
+                setDocuments(prev => ({
+                    ...prev,
+                    [collaborationId]: data.data
+                }));
             }
         } catch (error) {
-            toast.error(error.message);
-        } finally {
-            setLoading(false);
+            console.error('Error fetching documents:', error);
         }
     };
-
-    const fetchDocuments = async (collaborationId, userEmail) => {
         try {
             const response = await fetch(`/api/collaborative-documents?collaborationId=${collaborationId}&email=${userEmail}`);
             const data = await response.json();

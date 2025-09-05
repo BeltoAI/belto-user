@@ -170,6 +170,8 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
   useEffect(() => {
     if (!editor.current || !editor.current.editor) return;
     
+    const currentEditor = editor.current.editor; // Store ref value
+    
     const handleDisabledCopyPaste = (e) => {
       if (!allowCopyPaste) {
         e.preventDefault();
@@ -194,8 +196,8 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
     
     // Add listeners once editor is ready
     const initTimer = setTimeout(() => {
-      if (editor.current && editor.current.editor && editor.current.editor.container) {
-        const joditElement = editor.current.editor.container;
+      if (currentEditor && currentEditor.container) {
+        const joditElement = currentEditor.container;
         
         // Prevent copy/paste through context menu
         joditElement.addEventListener('copy', handleDisabledCopyPaste);
@@ -218,14 +220,14 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
       clearTimeout(initTimer);
       
       // Clean up event listeners when component unmounts
-      if (editor.current && editor.current.editor && editor.current.editor.container) {
-        const joditElement = editor.current.editor.container;
+      if (currentEditor && currentEditor.container) {
+        const joditElement = currentEditor.container;
         joditElement.removeEventListener('copy', handleDisabledCopyPaste);
         joditElement.removeEventListener('paste', handleDisabledCopyPaste);
         joditElement.removeEventListener('cut', handleDisabledCopyPaste);
       }
     };
-  }, [allowCopyPaste, editor.current?.editor]);
+  }, [allowCopyPaste]);
 
   const handleVersionClick = (content) => {
     updateEditorContent(content);
@@ -484,7 +486,7 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
         eventSource.close();
       }
     };
-  }, [editor.current?.documentId]);
+  }, [editor.current?.documentId, eventSource, setEditorContent]);
 
   useEffect(() => {
     // First check if editor.current exists and has a valid editor property
@@ -632,7 +634,7 @@ const JoditTextEditor = ({ isWideView = false, isMobile = false, onToggleSidebar
     // Return menu items with null joditInstance as fallback
     console.log('⚠️ Editor not ready or instance unavailable, creating menu items with null joditInstance');
     return getMenuItems(null, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations);
-  }, [isEditorReady, editorInstance, editor.current?.editor, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations]);
+  }, [isEditorReady, editorInstance, setIsEditorVisible, handleFileOpen, handlePrint, handleSaveVersion, handleShowOldVersions, handleShowCollaboration, handleShowYourCollaborations]);
 
   // Modify config to disable copy/paste buttons if not allowed
   const config = useMemo(() => ({

@@ -59,22 +59,40 @@ function appReducer(state, action) {
   }
 }
 
+// Chat fallback component
+const ChatFallback = () => (
+  <div className="flex items-center justify-center h-full bg-[#111111] text-white p-4">
+    <div className="text-center">
+      <p className="text-red-400 mb-2">Failed to load Chat component</p>
+      <button 
+        onClick={() => window.location.reload()}
+        className="bg-[#FFB800] text-black px-4 py-2 rounded-lg hover:bg-[#E6A600] transition-colors"
+      >
+        Retry
+      </button>
+    </div>
+  </div>
+);
+
+// Editor fallback component
+const EditorFallback = () => (
+  <div className="flex items-center justify-center h-full bg-[#1A1A1A] text-white p-4">
+    <div className="text-center">
+      <p className="text-red-400 mb-2">Failed to load Editor component</p>
+      <button 
+        onClick={() => window.location.reload()}
+        className="bg-[#FFB800] text-black px-4 py-2 rounded-lg hover:bg-[#E6A600] transition-colors"
+      >
+        Retry
+      </button>
+    </div>
+  </div>
+);
+
 // Dynamic imports with enhanced error handling
 const DynamicChatSection = dynamic(() => import('../chat/page').catch(err => {
   console.error('Failed to load Chat component:', err);
-  return () => (
-    <div className="flex items-center justify-center h-full bg-[#111111] text-white p-4">
-      <div className="text-center">
-        <p className="text-red-400 mb-2">Failed to load Chat component</p>
-        <button 
-          onClick={() => window.location.reload()}
-          className="bg-[#FFB800] text-black px-4 py-2 rounded-lg hover:bg-[#E6A600] transition-colors"
-        >
-          Retry
-        </button>
-      </div>
-    </div>
-  );
+  return ChatFallback;
 }), {
   ssr: false,
   loading: () => <SafeLoading componentName="Chat" />
@@ -82,19 +100,7 @@ const DynamicChatSection = dynamic(() => import('../chat/page').catch(err => {
 
 const DynamicJoditTextEditor = dynamic(() => import('../slateeditor/page').catch(err => {
   console.error('Failed to load Editor component:', err);
-  return () => (
-    <div className="flex items-center justify-center h-full bg-[#1A1A1A] text-white p-4">
-      <div className="text-center">
-        <p className="text-red-400 mb-2">Failed to load Editor component</p>
-        <button 
-          onClick={() => window.location.reload()}
-          className="bg-[#FFB800] text-black px-4 py-2 rounded-lg hover:bg-[#E6A600] transition-colors"
-        >
-          Retry
-        </button>
-      </div>
-    </div>
-  );
+  return EditorFallback;
 }), {
   ssr: false,
   loading: () => <SafeLoading componentName="Editor" />

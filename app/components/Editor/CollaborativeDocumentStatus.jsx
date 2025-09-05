@@ -39,7 +39,7 @@ const CollaborativeDocumentStatus = ({ documentId }) => {
       }
     });
     setUserColors(newColors);
-  }, [activeUsers]);
+  }, [activeUsers, userColors]);
 
   if (!documentId || activeUsers.length === 0) {
     return null;

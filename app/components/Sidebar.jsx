@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import {
   Menu,
   X,
@@ -474,9 +475,11 @@ const Sidebar = () => {
               >
                 <div className="w-8 h-8 rounded-full overflow-hidden mr-2 border-2 border-[#FFD700] group-hover:border-[#FFE44D] bg-[#2a2a2a] flex items-center justify-center">
                   {user.profileImage && user.profileImage.trim() !== '' ? (
-                    <img 
+                    <Image 
                       src={user.profileImage} 
                       alt="Profile" 
+                      width={32}
+                      height={32}
                       className="w-full h-full object-cover"
                       onError={(e) => {
                         console.log('Profile image failed to load, using fallback');

@@ -363,10 +363,12 @@ export const useChatHandlers = (
     updateTokenUsage, 
     clearInputs,
     username,
+    userAvatar,
     aiPreferences, // Add to dependencies
     totalTokenUsage,
     totalPrompts,
-    lectureMaterials // Add this dependency
+    lectureMaterials, // Add this dependency
+    setMessages
   ]);
 
   const handleDelete = useCallback(async (index) => {
