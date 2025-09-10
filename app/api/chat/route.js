@@ -146,6 +146,35 @@ export async function POST(req) {
     // Add the message to the session
     session.messages.push(newMessage);
     
+    // SECURITY: Update cumulative counters that NEVER decrease when messages are deleted
+    if (!session.security) {
+      session.security = {
+        totalPromptsUsed: 0,
+        totalTokensUsed: 0,
+        lastUpdated: new Date()
+      };
+    }
+    
+    // Increment security counters for tracking purposes
+    if (!newMessage.isBot) {
+      // User message - increment prompt counter
+      session.security.totalPromptsUsed += 1;
+      console.log('🔒 SECURITY: Prompt counter incremented on server', {
+        sessionId: sessionId.substring(0, 8) + '...',
+        newPromptCount: session.security.totalPromptsUsed
+      });
+    } else if (newMessage.tokenUsage && newMessage.tokenUsage.total_tokens) {
+      // Bot message with token usage - increment token counter
+      session.security.totalTokensUsed += newMessage.tokenUsage.total_tokens;
+      console.log('🔒 SECURITY: Token counter incremented on server', {
+        sessionId: sessionId.substring(0, 8) + '...',
+        tokensAdded: newMessage.tokenUsage.total_tokens,
+        newTokenTotal: session.security.totalTokensUsed
+      });
+    }
+    
+    session.security.lastUpdated = new Date();
+    
     // Save the session with proper error handling
     try {
       await session.save();

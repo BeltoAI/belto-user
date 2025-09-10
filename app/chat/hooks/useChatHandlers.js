@@ -25,9 +25,55 @@ export const useChatHandlers = (
   const { generateAIResponse } = useAIResponse();
   const { logQualityMetrics } = useResponseQualityMonitor();
 
-  // Track total token usage for the session
+  // Track total token usage for the session - SECURITY: These should NEVER decrease when messages are deleted
   const [totalTokenUsage, setTotalTokenUsage] = useState(0);
   const [totalPrompts, setTotalPrompts] = useState(0);
+  
+  // SECURITY: Track if counters have been initialized to prevent reset attacks
+  const [countersInitialized, setCountersInitialized] = useState(false);
+  
+  // SECURITY: Fetch and sync with server-side security counters when session changes
+  useEffect(() => {
+    const fetchSecurityCounters = async () => {
+      if (!currentSessionId) return;
+      
+      try {
+        const response = await fetch(`/api/chat/security?sessionId=${currentSessionId}`);
+        if (response.ok) {
+          const data = await response.json();
+          console.log('🔒 SECURITY: Syncing with server-side counters', {
+            sessionId: currentSessionId.substring(0, 8) + '...',
+            serverPrompts: data.security.totalPromptsUsed,
+            serverTokens: data.security.totalTokensUsed,
+            clientPrompts: totalPrompts,
+            clientTokens: totalTokenUsage
+          });
+          
+          // Use server-side counters as the source of truth
+          setTotalPrompts(data.security.totalPromptsUsed);
+          setTotalTokenUsage(data.security.totalTokensUsed);
+          setCountersInitialized(true);
+        }
+      } catch (error) {
+        console.error('Failed to fetch security counters:', error);
+        // Fallback to message-based calculation if server fetch fails
+        if (!countersInitialized && messages.length > 0) {
+          const tokenSum = messages.reduce((sum, msg) => {
+            if (msg.isBot && msg.tokenUsage) {
+              return sum + (msg.tokenUsage.total_tokens || 0);
+            }
+            return sum;
+          }, 0);
+          const promptCount = messages.filter(msg => !msg.isBot).length;
+          setTotalTokenUsage(tokenSum);
+          setTotalPrompts(promptCount);
+          setCountersInitialized(true);
+        }
+      }
+    };
+    
+    fetchSecurityCounters();
+  }, [currentSessionId]); // Only run when session changes
 
   // Update username and avatar when user data changes
   useEffect(() => {
@@ -49,22 +95,32 @@ export const useChatHandlers = (
     }
   }, [user]);
 
-  // Calculate initial values when component mounts
+  // SECURITY FIX: Initialize counters only once and never allow them to decrease
+  // This prevents users from bypassing limits by deleting messages
   useEffect(() => {
-    // Sum up token usage from existing messages
-    const tokenSum = messages.reduce((sum, msg) => {
-      if (msg.isBot && msg.tokenUsage) {
-        return sum + (msg.tokenUsage.total_tokens || 0);
-      }
-      return sum;
-    }, 0);
-    
-    // Count user messages (prompts)
-    const promptCount = messages.filter(msg => !msg.isBot).length;
-    
-    setTotalTokenUsage(tokenSum);
-    setTotalPrompts(promptCount);
-  }, [messages]);
+    if (!countersInitialized && messages.length > 0) {
+      // Calculate initial values ONLY on first load
+      const tokenSum = messages.reduce((sum, msg) => {
+        if (msg.isBot && msg.tokenUsage) {
+          return sum + (msg.tokenUsage.total_tokens || 0);
+        }
+        return sum;
+      }, 0);
+      
+      // Count user messages (prompts)
+      const promptCount = messages.filter(msg => !msg.isBot).length;
+      
+      setTotalTokenUsage(tokenSum);
+      setTotalPrompts(promptCount);
+      setCountersInitialized(true);
+      
+      console.log('🔒 SECURITY: Counters initialized once', {
+        tokenSum,
+        promptCount,
+        sessionId: currentSessionId?.substring(0, 8) + '...'
+      });
+    }
+  }, [messages, countersInitialized, currentSessionId]);
 
   const handleMessageUpdate = useCallback((updatedMessages) => {
     setMessages(updatedMessages);
@@ -104,8 +160,17 @@ export const useChatHandlers = (
       return;
     }
 
-    // Increment prompt count for the new user message
-    setTotalPrompts(prevCount => prevCount + 1);
+    // SECURITY FIX: Increment prompt count for the new user message
+    // This should NEVER be decremented when messages are deleted
+    setTotalPrompts(prevCount => {
+      const newCount = prevCount + 1;
+      console.log('🔒 SECURITY: Prompt counter incremented', {
+        previous: prevCount,
+        new: newCount,
+        sessionId: currentSessionId?.substring(0, 8) + '...'
+      });
+      return newCount;
+    });
     
     const messageId = `${Date.now()}-${Math.random()}`;
     
@@ -317,8 +382,17 @@ export const useChatHandlers = (
         };
         setMessages(prevMessages => [...prevMessages, limitMessage]);
       } else {
-        // Add bot message and update total token usage
-        setTotalTokenUsage(newTotalTokens);
+        // SECURITY FIX: Add bot message and update total token usage (only increment, never decrement)
+        setTotalTokenUsage(prevTotal => {
+          const newTotal = prevTotal + (messageTokenUsage?.total_tokens || 0);
+          console.log('🔒 SECURITY: Token usage incremented', {
+            previousTotal: prevTotal,
+            messageTokens: messageTokenUsage?.total_tokens || 0,
+            newTotal: newTotal,
+            sessionId: currentSessionId?.substring(0, 8) + '...'
+          });
+          return newTotal;
+        });
         updateTokenUsage(messageTokenUsage);
         handleMessageUpdate([...messages, userMessage, botMessage]);
 
@@ -451,10 +525,18 @@ export const useChatHandlers = (
         setMessages(prev => prev.filter((_, i) => i !== index));
       }
 
-      // SECURITY FIX: Do NOT rollback token usage or prompt counters
+      // CRITICAL SECURITY: Do NOT rollback token usage or prompt counters when deleting messages
       // This prevents exploitation of the prompt limit system by deleting messages
       // The counters should remain as they were to maintain usage integrity
       // Users cannot bypass limits by deleting previously submitted prompts
+      
+      console.log('🔒 SECURITY: Message deleted but counters preserved', {
+        deletedMessageType: messageToDelete.isBot ? 'bot' : 'user',
+        tokensRemainAt: totalTokenUsage,
+        promptsRemainAt: totalPrompts,
+        sessionId: currentSessionId?.substring(0, 8) + '...',
+        securityNote: 'Counters intentionally NOT decremented to prevent limit bypass'
+      });
 
       toast.dismiss(loadingToast);
       toast.success('Message deleted successfully');

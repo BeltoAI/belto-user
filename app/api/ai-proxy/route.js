@@ -144,6 +144,192 @@ const CIRCUIT_BREAKER_THRESHOLD = 3; // More balanced circuit breaker
 const CIRCUIT_BREAKER_TIMEOUT = 45000; // Reduced to 45 seconds
 
 /**
+ * Calculates dynamic token limits based on content analysis and user intent
+ * @param {Object} body - Request body
+ * @param {Array} messages - Formatted messages array
+ * @returns {number} Optimal token limit
+ */
+function calculateDynamicTokenLimit(body, messages) {
+  // Base configuration
+  const config = {
+    minTokens: 400,       // Minimum for basic responses
+    maxTokens: 4000,      // Maximum cap to prevent excessive costs
+    baseTokens: 800,      // Starting point for calculations
+  };
+
+  // Content analysis
+  const contentMetrics = analyzeContentComplexity(body, messages);
+  
+  // Intent analysis  
+  const intentMetrics = analyzeUserIntent(body, messages);
+  
+  // Context analysis
+  const contextMetrics = analyzeContextRequirements(body, messages);
+  
+  // Calculate base requirement
+  let tokenRequirement = config.baseTokens;
+  
+  // Apply content complexity multiplier
+  tokenRequirement *= contentMetrics.complexityMultiplier;
+  
+  // Apply intent-based adjustments
+  tokenRequirement += intentMetrics.intentBonus;
+  
+  // Apply context requirements
+  tokenRequirement += contextMetrics.contextBonus;
+  
+  // Apply user preferences if available
+  if (body.preferences?.maxTokens || body.aiConfig?.maxTokens) {
+    const userMax = body.preferences?.maxTokens || body.aiConfig?.maxTokens;
+    tokenRequirement = Math.min(tokenRequirement, userMax);
+  }
+  
+  // Ensure within bounds
+  const finalTokens = Math.max(
+    config.minTokens, 
+    Math.min(config.maxTokens, Math.round(tokenRequirement))
+  );
+  
+  console.log('🧮 Token calculation breakdown:', {
+    contentComplexity: contentMetrics.complexityMultiplier,
+    intentBonus: intentMetrics.intentBonus,
+    contextBonus: contextMetrics.contextBonus,
+    baseRequirement: Math.round(config.baseTokens * contentMetrics.complexityMultiplier),
+    finalTokens: finalTokens,
+    reasoning: contentMetrics.reasoning
+  });
+  
+  return finalTokens;
+}
+
+/**
+ * Analyzes content complexity to determine appropriate scaling
+ */
+function analyzeContentComplexity(body, messages) {
+  const totalContentLength = messages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
+  const hasAttachments = body.attachments && body.attachments.length > 0;
+  
+  let complexityMultiplier = 1.0;
+  let reasoning = [];
+  
+  // Content length scaling
+  if (totalContentLength < 100) {
+    complexityMultiplier = 0.75; // Simple questions need fewer tokens
+    reasoning.push('Simple content');
+  } else if (totalContentLength < 500) {
+    complexityMultiplier = 1.0; // Standard content
+    reasoning.push('Standard content');
+  } else if (totalContentLength < 2000) {
+    complexityMultiplier = 1.3; // Moderate complexity
+    reasoning.push('Moderate complexity');
+  } else {
+    complexityMultiplier = 1.6; // High complexity
+    reasoning.push('High complexity content');
+  }
+  
+  // Document processing scaling
+  if (hasAttachments) {
+    const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
+    if (docSize > 100000) {
+      complexityMultiplier *= 2.0;
+      reasoning.push('Very large document');
+    } else if (docSize > 50000) {
+      complexityMultiplier *= 1.5;
+      reasoning.push('Large document');
+    } else if (docSize > 20000) {
+      complexityMultiplier *= 1.3;
+      reasoning.push('Medium document');
+    } else {
+      complexityMultiplier *= 1.1;
+      reasoning.push('Small document');
+    }
+  }
+  
+  return { complexityMultiplier, reasoning: reasoning.join(', ') };
+}
+
+/**
+ * Analyzes user intent to determine response requirements
+ */
+function analyzeUserIntent(body, messages) {
+  const lastUserMessage = messages.filter(m => m.role === 'user').pop()?.content?.toLowerCase() || '';
+  let intentBonus = 0;
+  
+  // Greeting and simple interactions
+  if (/^(hi|hello|hey|what|who are you|how are you)/.test(lastUserMessage.trim())) {
+    intentBonus = -200; // Greetings need fewer tokens
+  }
+  
+  // Analysis requests
+  else if (/\b(analyze|analysis|explain|breakdown|detailed|comprehensive|examine)\b/.test(lastUserMessage)) {
+    intentBonus = 400; // Analysis needs more tokens
+  }
+  
+  // Summary requests
+  else if (/\b(summarize|summary|overview|brief|outline)\b/.test(lastUserMessage)) {
+    intentBonus = 200; // Summaries need moderate tokens
+  }
+  
+  // Step-by-step instructions
+  else if (/\b(steps|how to|tutorial|guide|procedure|process)\b/.test(lastUserMessage)) {
+    intentBonus = 300; // Instructions need more tokens
+  }
+  
+  // Comparison requests
+  else if (/\b(compare|contrast|difference|similar|versus|vs)\b/.test(lastUserMessage)) {
+    intentBonus = 350; // Comparisons need substantial tokens
+  }
+  
+  // Educational questions
+  else if (/\b(teach|learn|understand|concept|theory|principle|formula)\b/.test(lastUserMessage)) {
+    intentBonus = 250; // Educational content needs more tokens
+  }
+  
+  // List/enumeration requests
+  else if (/\b(list|enumerate|points|items|examples|types|kinds)\b/.test(lastUserMessage)) {
+    intentBonus = 150; // Lists need moderate tokens
+  }
+  
+  return { intentBonus };
+}
+
+/**
+ * Analyzes context requirements for optimal responses
+ */
+function analyzeContextRequirements(body, messages) {
+  let contextBonus = 0;
+  
+  // Conversation history length
+  const historyLength = messages.filter(m => m.role !== 'system').length;
+  if (historyLength > 10) {
+    contextBonus += 100; // Long conversations need more context
+  } else if (historyLength > 5) {
+    contextBonus += 50; // Medium conversations need some context
+  }
+  
+  // Processing hints
+  if (body.processingHints) {
+    const hints = body.processingHints;
+    if (hints.analysisType === 'analysis') {
+      contextBonus += 200; // Detailed analysis needs more tokens
+    } else if (hints.analysisType === 'summary') {
+      contextBonus += 100; // Summaries need moderate tokens
+    }
+    
+    if (hints.documentType === 'pdf') {
+      contextBonus += 100; // PDFs often need structured responses
+    }
+  }
+  
+  // Lecture materials context
+  if (body.preferences?.systemPrompts?.length > 0) {
+    contextBonus += 150; // Lecture-specific responses need more context
+  }
+  
+  return { contextBonus };
+}
+
+/**
  * Determines appropriate timeout based on request complexity - OPTIMIZED FOR SPEED
  * @param {Object} body - Request body
  * @param {Array} messages - Formatted messages array
@@ -374,7 +560,7 @@ async function healthCheck() {
       const startTime = Date.now();
       // Use endpoint-specific format for health check
       const testMessages = [{ role: 'user', content: 'test' }];
-      const requestConfig = formatRequestForEndpoint(endpointConfig.url, testMessages, process.env.AI_API_KEY || 'test');
+      const requestConfig = formatRequestForEndpoint(endpointConfig.url, testMessages, process.env.AI_API_KEY || 'test', 256); // Use smaller tokens for health check
       
       const response = await axios.post(requestConfig.url, requestConfig.data, {
         timeout: 8000, // Increased timeout for health check
@@ -430,9 +616,10 @@ const initializeHealthCheck = () => {
  * @param {Object} endpoint - The endpoint configuration object
  * @param {Array} messages - The messages array
  * @param {string} apiKey - The API key
+ * @param {number} maxTokens - Dynamic token limit
  * @returns {Object} Formatted request config
  */
-function formatRequestForEndpoint(endpoint, messages, apiKey) {
+function formatRequestForEndpoint(endpoint, messages, apiKey, maxTokens = 512) {
   const endpointConfig = endpoints.find(e => e.url === endpoint);
   
   if (!endpointConfig) {
@@ -461,7 +648,7 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
       data: {
         model: 'local',
         messages: enhancedMessages,
-        max_tokens: 512, // Increased for complete responses
+        max_tokens: maxTokens, // Dynamic token limit
         temperature: 0.7,
         stop: ["User:", "System:", "DeepSeek:", "We need to", "The user", "So we", "Let's", "CRITICAL", "REMINDER:"]
       },
@@ -485,7 +672,7 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
       data: {
         model: 'local',
         prompt: prompt,
-        max_tokens: 512, // Increased for complete responses
+        max_tokens: maxTokens, // Dynamic token limit
         temperature: 0.7,
         stop: ["User:", "System:", "DeepSeek:", "We need to", "The user", "So we", "Let's", "CRITICAL", "REMINDER:"]
       },
@@ -1013,45 +1200,16 @@ As BELTO AI, you are processing ${documentTypes} file(s) for educational purpose
     // Determine appropriate timeout based on request complexity
     const requestTimeout = getTimeoutForRequest(body, optimizedMessages);
 
-    // Determine appropriate token limit based on request complexity - EDUCATIONAL FOCUS
-    let maxTokens = 800; // Increased default for complete, comprehensive responses
-    const totalContentLength = optimizedMessages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
-    const hasAttachments = body.attachments && body.attachments.length > 0;
-    
-    // EDUCATIONAL RESPONSE OPTIMIZATION: Ensure complete, helpful responses
-    if (!hasAttachments && totalContentLength < 100) {
-      maxTokens = 300; // Further increased for complete basic responses
-      console.log(`� Using basic educational token limit (${maxTokens}) for simple message`);
-    } else if (!hasAttachments && totalContentLength < 200) {
-      maxTokens = 500; // Further increased for comprehensive responses
-      console.log(`📚 Using standard educational token limit (${maxTokens}) for simple message`);
-    } else if (!hasAttachments && totalContentLength < 500) {
-      maxTokens = 800; // Further increased for detailed explanations
-      console.log(`� Using enhanced educational token limit (${maxTokens}) for basic request`);
-    } else if (!hasAttachments && totalContentLength < 1000) {
-      maxTokens = 1200; // Further increased for comprehensive responses
-      console.log(`📝 Using comprehensive token limit (${maxTokens}) for normal request`);
-    } else if (hasAttachments) {
-      // EDUCATIONAL DOCUMENT PROCESSING: Scale appropriately for academic content
-      const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
-      if (docSize > 100000) {
-        maxTokens = 2000; // Increased for comprehensive document analysis
-      } else if (docSize > 50000) {
-        maxTokens = 1500; // Increased for detailed document analysis
-      } else if (docSize > 20000) {
-        maxTokens = 1000; // Increased for comprehensive analysis
-      } else {
-        maxTokens = 800; // Increased for thorough document understanding
-      }
-      console.log(`📄 Using adaptive token limit (${maxTokens}) for document request`);
-    }
+    // DYNAMIC TOKEN MANAGEMENT SYSTEM - Intelligent scaling based on content and context
+    const maxTokens = calculateDynamicTokenLimit(body, optimizedMessages);
+    console.log(`🧠 Dynamic token limit calculated: ${maxTokens} tokens`);
 
-    // Prepare the request payload optimized for speed
+    // Prepare the request payload with dynamic optimization
     const aiRequestPayload = {
       model: body.aiConfig?.model || body.preferences?.model || 'default-model',
       messages: optimizedMessages,
       temperature: body.aiConfig?.temperature || body.preferences?.temperature || 0.7,
-      max_tokens: Math.min(body.aiConfig?.maxTokens || body.preferences?.maxTokens || maxTokens, maxTokens),
+      max_tokens: body.aiConfig?.maxTokens || body.preferences?.maxTokens || maxTokens, // Respect user preferences but default to dynamic calculation
       stream: body.aiConfig?.streaming || body.preferences?.streaming || false, // Add streaming support
     };
 
@@ -1129,8 +1287,8 @@ As BELTO AI, you are processing ${documentTypes} file(s) for educational purpose
         attemptedEndpoints.add(selectedEndpoint);
         console.log(`Attempt ${attempt}: Selected endpoint for request: ${selectedEndpoint}`);
         
-        // Format request for the specific endpoint type
-        const requestConfig = formatRequestForEndpoint(selectedEndpoint, optimizedMessages, apiKey);
+        // Format request for the specific endpoint type with dynamic tokens
+        const requestConfig = formatRequestForEndpoint(selectedEndpoint, optimizedMessages, apiKey, maxTokens);
         
         // Add detailed logging for debugging
         const endpointConfig = endpoints.find(e => e.url === selectedEndpoint);

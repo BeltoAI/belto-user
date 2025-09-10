@@ -54,7 +54,25 @@ const chatSessionSchema = new mongoose.Schema({
     type: String,
     default: 'New Chat'
   },
-  messages: [messageSchema]
+  messages: [messageSchema],
+  
+  // SECURITY: Track cumulative usage that NEVER decreases when messages are deleted
+  security: {
+    totalPromptsUsed: {
+      type: Number,
+      default: 0,
+      min: 0 // Ensure it never goes negative
+    },
+    totalTokensUsed: {
+      type: Number,
+      default: 0,
+      min: 0 // Ensure it never goes negative
+    },
+    lastUpdated: {
+      type: Date,
+      default: Date.now
+    }
+  }
 }, { timestamps: true });
 
 // Ensure model isn't already defined

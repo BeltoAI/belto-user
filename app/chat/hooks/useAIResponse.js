@@ -16,8 +16,14 @@ export const useAIResponse = () => {
     setError(null);
     
     try {
-      // Check if message count exceeds limit
+      // SECURITY: Check if message count exceeds limit using secure counters
+      // Use the secure messageCount parameter instead of calculating from previousMessages
       if (aiPreferences?.numPrompts && messageCount >= aiPreferences.numPrompts) {
+        console.log('🔒 SECURITY: Prompt limit enforced using secure counter', {
+          messageCount,
+          limit: aiPreferences.numPrompts,
+          securityNote: 'Using secure counter, not UI message count'
+        });
         return {
           response: `I apologize, but you've reached the maximum number of messages (${aiPreferences.numPrompts}) allowed for this session.`,
           limitReached: true,
@@ -26,7 +32,8 @@ export const useAIResponse = () => {
         };
       }
 
-      // Calculate total tokens used so far if tracking is enabled
+      // SECURITY: Calculate total tokens used so far using secure tracking
+      // Note: This should ideally use server-side security counters
       let totalTokensUsed = 0;
       if (aiPreferences?.tokenPredictionLimit && previousMessages.length > 0) {
         // If previousMessages contains properly formatted messages with tokenUsage
@@ -38,11 +45,16 @@ export const useAIResponse = () => {
         
         // If approaching token limit (>90%), warn the user
         if (totalTokensUsed > aiPreferences.tokenPredictionLimit * 0.9) {
-          console.warn(`Approaching token limit: ${totalTokensUsed}/${aiPreferences.tokenPredictionLimit}`);
+          console.warn(`🔒 SECURITY: Approaching token limit: ${totalTokensUsed}/${aiPreferences.tokenPredictionLimit}`);
         }
         
         // If exceeding token limit, return error message
         if (totalTokensUsed >= aiPreferences.tokenPredictionLimit) {
+          console.log('🔒 SECURITY: Token limit enforced', {
+            totalTokensUsed,
+            limit: aiPreferences.tokenPredictionLimit,
+            securityNote: 'Token limit enforcement active'
+          });
           return {
             response: `I apologize, but you've reached the maximum token usage limit (${aiPreferences.tokenPredictionLimit}) for this session.`,
             limitReached: true,

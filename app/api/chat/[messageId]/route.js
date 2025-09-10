@@ -50,6 +50,17 @@ export async function DELETE(request, { params }) {
       session.messages.splice(messageIndex, 1);
     }
 
+    // CRITICAL SECURITY: DO NOT modify session.security counters
+    // The security.totalPromptsUsed and security.totalTokensUsed should NEVER decrease
+    // This prevents users from bypassing limits by deleting messages
+    console.log('🔒 SECURITY: Message deleted but security counters preserved', {
+      sessionId: sessionId.substring(0, 8) + '...',
+      messagesRemaining: session.messages.length,
+      securityPromptsUsed: session.security?.totalPromptsUsed || 0,
+      securityTokensUsed: session.security?.totalTokensUsed || 0,
+      securityNote: 'Counters intentionally NOT decremented to prevent limit bypass'
+    });
+
     await session.save();
     return NextResponse.json({ message: 'Messages deleted successfully' });
 
