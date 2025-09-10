@@ -3,6 +3,7 @@
 import { useCallback, useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { useAIResponse } from './useAIResponse';
+import { useResponseQualityMonitor } from './useResponseQualityMonitor';
 import { useUser } from '@/contexts/UserContext';
 
 // Update the function signature to accept lectureMaterials
@@ -22,6 +23,7 @@ export const useChatHandlers = (
   // Start with empty avatar; UI will render an icon fallback (no user.png)
   const [userAvatar, setUserAvatar] = useState('');
   const { generateAIResponse } = useAIResponse();
+  const { logQualityMetrics } = useResponseQualityMonitor();
 
   // Track total token usage for the session
   const [totalTokenUsage, setTotalTokenUsage] = useState(0);
@@ -238,6 +240,26 @@ export const useChatHandlers = (
       if (aiResult.status === 'fulfilled') {
         aiResponse = aiResult.value.response;
         messageTokenUsage = aiResult.value.tokenUsage;
+        
+        // Monitor response quality
+        const qualityContext = {
+          hasDocument: attachmentsToSend.length > 0,
+          isMathOrScience: /math|science|equation|formula|calculate|solve/i.test(text),
+          isGreeting: /hello|hi|hey|greetings/i.test(text.toLowerCase())
+        };
+        
+        const qualityAnalysis = logQualityMetrics(aiResponse, qualityContext, currentSessionId);
+        
+        // If quality is poor, log additional details for debugging
+        if (qualityAnalysis.score < 50) {
+          console.warn('🚨 Poor quality response detected:', {
+            score: qualityAnalysis.score,
+            issues: qualityAnalysis.issues,
+            promptLength: text.length,
+            attachments: attachmentsToSend.length,
+            tokenUsage: messageTokenUsage
+          });
+        }
         
         // If this is a fallback response, inform the user subtly
         if (aiResult.value.fallback) {

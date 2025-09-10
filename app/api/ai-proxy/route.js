@@ -461,9 +461,9 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
       data: {
         model: 'local',
         messages: enhancedMessages,
-        max_tokens: 256,
+        max_tokens: 512, // Increased for complete responses
         temperature: 0.7,
-        stop: ["User:", "System:", "DeepSeek:", "Assistant:", "We need to", "The user", "So we", "Let's", "CRITICAL", "REMINDER:"]
+        stop: ["User:", "System:", "DeepSeek:", "We need to", "The user", "So we", "Let's", "CRITICAL", "REMINDER:"]
       },
       headers: {
         'Content-Type': 'application/json'
@@ -485,9 +485,9 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
       data: {
         model: 'local',
         prompt: prompt,
-        max_tokens: 256,
+        max_tokens: 512, // Increased for complete responses
         temperature: 0.7,
-        stop: ["User:", "System:", "DeepSeek:", "Assistant:", "We need to", "The user", "So we", "Let's", "CRITICAL", "REMINDER:"]
+        stop: ["User:", "System:", "DeepSeek:", "We need to", "The user", "So we", "Let's", "CRITICAL", "REMINDER:"]
       },
       headers: {
         'Content-Type': 'application/json'
@@ -617,12 +617,12 @@ function cleanResponseContent(content) {
       return `\`\`\`${language}\n${cleanCode}\n\`\`\``;
     });
 
-  // STEP 2: Split into sentences and filter out system reasoning
+  // STEP 2: Split into sentences and filter out system reasoning while preserving educational content
   const sentences = cleanedContent.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 0);
   const cleanSentences = sentences.filter(sentence => {
     const lower = sentence.toLowerCase();
     
-    // Filter out system reasoning patterns
+    // Filter out system reasoning patterns but preserve educational explanations
     if (lower.includes('we need to') || 
         lower.includes('the user') || 
         lower.includes('so we respond') ||
@@ -636,7 +636,7 @@ function cleanResponseContent(content) {
       return false;
     }
     
-    // Keep actual responses
+    // Keep actual educational responses and explanations
     return true;
   });
 
@@ -910,7 +910,7 @@ CRITICAL IDENTITY RULES FOR BELTO AI:
       console.log('System message metrics:', { hasAttachments, totalContentLength });
       
       // COMPREHENSIVE system messages for accurate responses
-      const baseSystemPrompt = `You are BELTO AI, an educational assistant designed to help students with academic tasks. Your responses should be direct, helpful, and focused only on answering the user's question.
+      const baseSystemPrompt = `You are BELTO AI, an educational assistant designed to help students with academic tasks. Your responses should be comprehensive, complete, and focused on providing thorough educational support.
 
 IDENTITY:
 - Your name is BELTO AI
@@ -919,15 +919,23 @@ IDENTITY:
 - Always respond in English only
 
 RESPONSE RULES:
-- Answer only what is asked - do not add unrelated information
-- Be direct and helpful
-- Stop when the question is fully answered
-- Do not explain your reasoning process
-- Do not mention other AI systems
+- Provide COMPLETE and THOROUGH responses to all questions
+- Give comprehensive explanations with examples when helpful
+- Include step-by-step solutions for complex problems
+- Offer additional context and related information when relevant
+- Be detailed and educational in your responses
+- Do not cut responses short or leave explanations incomplete
 - For greetings like "hi" or "hello", respond warmly and ask how you can help
-- Keep responses focused and educational
+- Always aim to fully address the user's question or request
 
-Your purpose is to provide clear, direct educational support to students.`;
+EDUCATIONAL FOCUS:
+- Prioritize learning outcomes and understanding
+- Provide detailed explanations that help students learn
+- Include relevant examples and applications
+- Offer study tips and learning strategies when appropriate
+- Connect concepts to broader academic contexts
+
+Your purpose is to provide complete, comprehensive educational support to students.`;
 
       if (!hasAttachments && totalContentLength < 100) {
         // Brief but complete system message for simple requests
@@ -942,14 +950,17 @@ Your purpose is to provide clear, direct educational support to students.`;
         
         systemContent = `${baseSystemPrompt}
 
-As BELTO AI, you are processing ${documentTypes} file(s) for educational purposes. Provide a ${processingType === 'summary' ? 'clear and comprehensive summary' : 'detailed analysis'} focused on:
-- Key educational insights and learning objectives
-- Important academic concepts and details
-- Actionable information for student understanding
-- Clear explanations that support learning`;
+As BELTO AI, you are processing ${documentTypes} file(s) for educational purposes. Provide a ${processingType === 'summary' ? 'comprehensive and detailed summary' : 'thorough and complete analysis'} focused on:
+- Comprehensive educational insights and learning objectives
+- All important academic concepts and details with explanations
+- Complete analysis that covers all relevant aspects
+- Clear, detailed explanations that support deep learning
+- Actionable information for comprehensive student understanding
+- Step-by-step breakdowns when applicable
+- Related concepts and connections to broader topics`;
         
         if (body.processingHints?.documentType === 'pdf') {
-          systemContent += '\n- Pay special attention to document structure, headings, and key sections for academic organization';
+          systemContent += '\n- Detailed attention to document structure, headings, and all key sections for comprehensive academic organization';
         }
       } else {
         // Standard system message for normal requests
@@ -1003,22 +1014,22 @@ As BELTO AI, you are processing ${documentTypes} file(s) for educational purpose
     const requestTimeout = getTimeoutForRequest(body, optimizedMessages);
 
     // Determine appropriate token limit based on request complexity - EDUCATIONAL FOCUS
-    let maxTokens = 500; // Increased default for complete responses
+    let maxTokens = 800; // Increased default for complete, comprehensive responses
     const totalContentLength = optimizedMessages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
     const hasAttachments = body.attachments && body.attachments.length > 0;
     
     // EDUCATIONAL RESPONSE OPTIMIZATION: Ensure complete, helpful responses
     if (!hasAttachments && totalContentLength < 100) {
-      maxTokens = 150; // Increased for complete basic responses
+      maxTokens = 300; // Further increased for complete basic responses
       console.log(`� Using basic educational token limit (${maxTokens}) for simple message`);
     } else if (!hasAttachments && totalContentLength < 200) {
-      maxTokens = 250; // Increased for comprehensive responses
+      maxTokens = 500; // Further increased for comprehensive responses
       console.log(`📚 Using standard educational token limit (${maxTokens}) for simple message`);
     } else if (!hasAttachments && totalContentLength < 500) {
-      maxTokens = 400; // Increased for detailed explanations
+      maxTokens = 800; // Further increased for detailed explanations
       console.log(`� Using enhanced educational token limit (${maxTokens}) for basic request`);
     } else if (!hasAttachments && totalContentLength < 1000) {
-      maxTokens = 600; // Increased for comprehensive responses
+      maxTokens = 1200; // Further increased for comprehensive responses
       console.log(`📝 Using comprehensive token limit (${maxTokens}) for normal request`);
     } else if (hasAttachments) {
       // EDUCATIONAL DOCUMENT PROCESSING: Scale appropriately for academic content
@@ -1197,9 +1208,13 @@ As BELTO AI, you are processing ${documentTypes} file(s) for educational purpose
           }
           
           // Ensure we have meaningful content after cleaning
-          if (!finalContent || finalContent.trim().length < 3) {
-            console.log('🔄 Content too short after cleaning, providing fallback');
-            finalContent = "Hello! I'm BELTO AI, your educational assistant. How can I help you with your studies today?";
+          if (!finalContent || finalContent.trim().length < 10) {
+            console.log('🔄 Content too short after cleaning, providing educational fallback');
+            if (body.attachments && body.attachments.length > 0) {
+              finalContent = "Hello! I'm BELTO AI, your educational assistant. I've processed your document and I'm ready to provide comprehensive analysis. Could you please ask me a specific question about the content so I can give you a detailed and helpful response?";
+            } else {
+              finalContent = "Hello! I'm BELTO AI, your educational assistant. I'm here to provide comprehensive support for your academic needs. How can I help you with your studies today?";
+            }
           }
           
           // Apply post-processing rules if provided
