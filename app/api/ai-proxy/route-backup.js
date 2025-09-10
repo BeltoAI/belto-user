@@ -1,0 +1,1652 @@
+import { NextResponse } from 'next/server';
+import axios from 'axios';
+
+/**
+ * DYNAMIC TOKEN MANAGEMENT SYSTEM - Moved to top for proper scope
+ */
+
+/**
+ * Calculates dynamic token limits based on content analysis and user intent
+ * @param {Object} body - Request body
+ * @param {Array} messages - Formatted messages array
+ * @returns {number} Optimal token limit
+ */
+function calculateDynamicTokenLimit(body, messages) {
+  // Base configuration
+  const config = {
+    minTokens: 400,       // Minimum for basic responses
+    maxTokens: 4000,      // Maximum cap to prevent excessive costs
+    baseTokens: 800,      // Starting point for calculations
+  };
+
+  // Content analysis
+  const contentMetrics = analyzeContentComplexity(body, messages);
+  
+  // Intent analysis  
+  const intentMetrics = analyzeUserIntent(body, messages);
+  
+  // Context analysis
+  const contextMetrics = analyzeContextRequirements(body, messages);
+  
+  // Calculate base requirement
+  let tokenRequirement = config.baseTokens;
+  
+  // Apply content complexity multiplier
+  tokenRequirement *= contentMetrics.complexityMultiplier;
+  
+  // Apply intent-based adjustments
+  tokenRequirement += intentMetrics.intentBonus;
+  
+  // Apply context requirements
+  tokenRequirement += contextMetrics.contextBonus;
+  
+  // Apply user preferences if available
+  if (body.preferences?.maxTokens || body.aiConfig?.maxTokens) {
+    const userMax = body.preferences?.maxTokens || body.aiConfig?.maxTokens;
+    tokenRequirement = Math.min(tokenRequirement, userMax);
+  }
+  
+  // Ensure within bounds
+  const finalTokens = Math.max(
+    config.minTokens, 
+    Math.min(config.maxTokens, Math.round(tokenRequirement))
+  );
+  
+  console.log('🧮 Token calculation breakdown:', {
+    contentComplexity: contentMetrics.complexityMultiplier,
+    intentBonus: intentMetrics.intentBonus,
+    contextBonus: contextMetrics.contextBonus,
+    baseRequirement: Math.round(config.baseTokens * contentMetrics.complexityMultiplier),
+    finalTokens: finalTokens,
+    reasoning: contentMetrics.reasoning
+  });
+  
+  return finalTokens;
+}
+
+/**
+ * Analyzes content complexity to determine appropriate scaling
+ */
+function analyzeContentComplexity(body, messages) {
+  const totalContentLength = messages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
+  const hasAttachments = body.attachments && body.attachments.length > 0;
+  
+  let complexityMultiplier = 1.0;
+  let reasoning = [];
+  
+  // Content length scaling
+  if (totalContentLength < 100) {
+    complexityMultiplier = 0.75; // Simple questions need fewer tokens
+    reasoning.push('Simple content');
+  } else if (totalContentLength < 500) {
+    complexityMultiplier = 1.0; // Standard content
+    reasoning.push('Standard content');
+  } else if (totalContentLength < 2000) {
+    complexityMultiplier = 1.3; // Moderate complexity
+    reasoning.push('Moderate complexity');
+  } else {
+    complexityMultiplier = 1.6; // High complexity
+    reasoning.push('High complexity content');
+  }
+  
+  // Document processing scaling
+  if (hasAttachments) {
+    const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
+    if (docSize > 100000) {
+      complexityMultiplier *= 2.0;
+      reasoning.push('Very large document');
+    } else if (docSize > 50000) {
+      complexityMultiplier *= 1.5;
+      reasoning.push('Large document');
+    } else if (docSize > 20000) {
+      complexityMultiplier *= 1.3;
+      reasoning.push('Medium document');
+    } else {
+      complexityMultiplier *= 1.1;
+      reasoning.push('Small document');
+    }
+  }
+  
+  return { complexityMultiplier, reasoning: reasoning.join(', ') };
+}
+
+/**
+ * Analyzes user intent to determine response requirements
+ */
+function analyzeUserIntent(body, messages) {
+  const lastUserMessage = messages.filter(m => m.role === 'user').pop()?.content?.toLowerCase() || '';
+  let intentBonus = 0;
+  
+  // Greeting and simple interactions
+  if (/^(hi|hello|hey|what|who are you|how are you)/.test(lastUserMessage.trim())) {
+    intentBonus = -200; // Greetings need fewer tokens
+  }
+  
+  // Analysis requests
+  else if (/\b(analyze|analysis|explain|breakdown|detailed|comprehensive|examine)\b/.test(lastUserMessage)) {
+    intentBonus = 400; // Analysis needs more tokens
+  }
+  
+  // Summary requests
+  else if (/\b(summarize|summary|overview|brief|outline)\b/.test(lastUserMessage)) {
+    intentBonus = 200; // Summaries need moderate tokens
+  }
+  
+  // Step-by-step instructions
+  else if (/\b(steps|how to|tutorial|guide|procedure|process)\b/.test(lastUserMessage)) {
+    intentBonus = 300; // Instructions need more tokens
+  }
+  
+  // Comparison requests
+  else if (/\b(compare|contrast|difference|similar|versus|vs)\b/.test(lastUserMessage)) {
+    intentBonus = 350; // Comparisons need substantial tokens
+  }
+  
+  // Educational questions
+  else if (/\b(teach|learn|understand|concept|theory|principle|formula)\b/.test(lastUserMessage)) {
+    intentBonus = 250; // Educational content needs more tokens
+  }
+  
+  // List/enumeration requests
+  else if (/\b(list|enumerate|points|items|examples|types|kinds)\b/.test(lastUserMessage)) {
+    intentBonus = 150; // Lists need moderate tokens
+  }
+  
+  return { intentBonus };
+}
+
+/**
+ * Analyzes context requirements for optimal responses
+ */
+function analyzeContextRequirements(body, messages) {
+  let contextBonus = 0;
+  
+  // Conversation history length
+  const historyLength = messages.filter(m => m.role !== 'system').length;
+  if (historyLength > 10) {
+    contextBonus += 100; // Long conversations need more context
+  } else if (historyLength > 5) {
+    contextBonus += 50; // Medium conversations need some context
+  }
+  
+  // Processing hints
+  if (body.processingHints) {
+    const hints = body.processingHints;
+    if (hints.analysisType === 'analysis') {
+      contextBonus += 200; // Detailed analysis needs more tokens
+    } else if (hints.analysisType === 'summary') {
+      contextBonus += 100; // Summaries need moderate tokens
+    }
+    
+    if (hints.documentType === 'pdf') {
+      contextBonus += 100; // PDFs often need structured responses
+    }
+  }
+  
+  // Lecture materials context
+  if (body.preferences?.systemPrompts?.length > 0) {
+    contextBonus += 150; // Lecture-specific responses need more context
+  }
+  
+  return { contextBonus };
+}
+
+// Processing rules helper function
+function applyPreprocessingRules(content, rules) {
+  if (!content || !rules) return content;
+  
+  let processedContent = content;
+  
+  // Remove sensitive data (basic implementation)
+  if (rules.removeSensitiveData) {
+    // Remove email patterns
+    processedContent = processedContent.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[EMAIL_REMOVED]');
+    // Remove phone patterns
+    processedContent = processedContent.replace(/(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g, '[PHONE_REMOVED]');
+    // Remove SSN-like patterns
+    processedContent = processedContent.replace(/\d{3}-\d{2}-\d{4}/g, '[SSN_REMOVED]');
+  }
+  
+  // Remove hyperlinks
+  if (rules.removeHyperlinks) {
+    // Remove URLs
+    processedContent = processedContent.replace(/https?:\/\/[^\s]+/g, '[LINK_REMOVED]');
+    // Remove markdown links
+    processedContent = processedContent.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
+  }
+  
+  // Format text (basic implementation)
+  if (rules.formatText) {
+    // Clean up extra whitespace
+    processedContent = processedContent.replace(/\s+/g, ' ').trim();
+    // Fix common punctuation issues
+    processedContent = processedContent.replace(/\s+([.!?])/g, '$1');
+  }
+  
+  return processedContent;
+}
+
+// Post-processing rules helper function
+function applyPostprocessingRules(content, rules) {
+  if (!content || !rules) return content;
+  
+  let processedContent = content;
+  
+  // Add citations (basic implementation)
+  if (rules.addCitations) {
+    // Add a simple citation note at the end
+    if (!processedContent.includes('[Citation:')) {
+      processedContent += '\n\n[Citation: Response generated by BELTO AI educational assistant]';
+    }
+  }
+  
+  return processedContent;
+}
+
+const endpoints = [
+  {
+    url: 'http://bel2ai.duckdns.org:8001/v1/chat/completions',
+    name: 'Llama 3.1 8B Instruct (RTX 3090)',
+    model: 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
+    type: 'chat',
+    context: 16384,
+    parallel: 6
+  },
+  {
+    url: 'http://bel2ai.duckdns.org:8002/v1/completions',
+    name: 'GPT-OSS 20B (RTX 3090)',
+    model: 'gpt-oss-20b.Q8_0.gguf',
+    type: 'completion',
+    context: 8192,
+    parallel: 3
+  },
+  {
+    url: 'http://bigbelto.duckdns.org:8004/v1/completions',
+    name: 'GPT-OSS 20B F16 (RTX 4090)',
+    model: 'gpt-oss-20b-F16.gguf',
+    type: 'completion',
+    context: 8192,
+    slots: 1
+  },
+  {
+    url: 'http://bigbelto.duckdns.org:8005/v1/completions',
+    name: 'Hermes-3 Llama-3.2-3B (RTX 4090)',
+    model: 'Hermes-3-Llama-3.2-3B.Q8_0.gguf',
+    type: 'completion',
+    context: 4096,
+    slots: 1
+  },
+  {
+    url: 'http://minibelto.duckdns.org:8007/v1/completions',
+    name: 'DeepSeek 7B Chat (RTX 3060 Ti)',
+    model: 'deepseek-llm-7b-chat.Q4_K_M.gguf',
+    type: 'completion',
+    context: 8192,
+    slots: 1
+  },
+  {
+    url: 'http://doublebelto.duckdns.org:8008/v1/completions',
+    name: 'GPT-OSS 20B Q4 (Double RTX 3060)',
+    model: 'gpt-oss-20b-Q4_K_M.gguf',
+    type: 'completion',
+    context: 4096,
+    slots: 1
+  },
+  {
+    url: 'http://doublebelto.duckdns.org:8009/v1/completions',
+    name: 'Hermes-3B Q4 (Double RTX 3060)',
+    model: 'Hermes-3-Llama-3.2-3B-Q4_K_M.gguf',
+    type: 'completion',
+    context: 4096,
+    slots: 1
+  }
+];
+
+// Add a flag to enable fallback responses when all endpoints fail - ENABLED with better logging
+const ENABLE_FALLBACK_RESPONSES = true;
+
+// 'http://97.90.195.162:9999/v1/chat/completions',
+
+// Endpoint health tracking with circuit breaker pattern
+const endpointStats = endpoints.map(endpoint => ({
+  url: endpoint.url,
+  name: endpoint.name,
+  model: endpoint.model,
+  type: endpoint.type,
+  context: endpoint.context,
+  isAvailable: true,
+  failCount: 0,
+  lastResponseTime: 0,
+  lastChecked: Date.now(),
+  consecutiveFailures: 0,
+  circuitBreakerOpen: false,
+  lastCircuitBreakerCheck: Date.now()
+}));
+
+// Optimized timeouts for faster responses while maintaining reliability
+const FAST_TIMEOUT_MS = 4000; // Balanced timeout for simple messages
+const BASE_TIMEOUT_MS = 7000; // Balanced timeout for normal requests  
+const ATTACHMENT_TIMEOUT_MS = 20000; // Reduced for faster document processing
+const MAX_CONSECUTIVE_FAILURES = 2; // More balanced failure threshold
+const RETRY_INTERVAL_MS = 25000; // Balanced retry interval
+const HEALTH_CHECK_THRESHOLD = 120000; // Back to 2 minutes for more frequent checks
+const CIRCUIT_BREAKER_THRESHOLD = 3; // More balanced circuit breaker
+const CIRCUIT_BREAKER_TIMEOUT = 45000; // Reduced to 45 seconds
+/**
+ * Determines appropriate timeout based on request complexity - OPTIMIZED FOR SPEED
+ * @param {Object} body - Request body
+ * @param {Array} messages - Formatted messages array
+ * @returns {number} Timeout in milliseconds
+ */
+function getTimeoutForRequest(body, messages) {
+  // Check for attachments or large content
+  const hasAttachments = body.attachments && body.attachments.length > 0;
+  const hasLargeContent = messages.some(msg => msg.content && msg.content.length > 1000);
+  const totalContentLength = messages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
+  
+  // ULTRA-FAST TRACK: Even more aggressive for very simple messages
+  if (!hasAttachments && !hasLargeContent && totalContentLength < 100) {
+    console.log(`🚀 Using ULTRA-FAST timeout (3000ms) for very simple message: ${totalContentLength} chars`);
+    return 3000; // Ultra-fast for "hi", "hello", etc.
+  }
+  // FAST TRACK: Ultra-fast processing for simple messages
+  if (!hasAttachments && !hasLargeContent && totalContentLength < 200) {
+    console.log(`⚡ Using FAST timeout (${FAST_TIMEOUT_MS}ms) for simple message: ${totalContentLength} chars`);
+    return FAST_TIMEOUT_MS;
+  }
+  // ADAPTIVE: For document/large requests, scale timeout with size
+  if (hasAttachments) {
+    const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
+    if (docSize > 100000) {
+      console.log(`📄 Large document detected (${docSize} chars), using 60s timeout`);
+      return 60000;
+    } else if (docSize > 50000) {
+      console.log(`📄 Medium-large document detected (${docSize} chars), using 45s timeout`);
+      return 45000;
+    } else if (docSize > 20000) {
+      console.log(`📄 Medium document detected (${docSize} chars), using 30s timeout`);
+      return 30000;
+    } else {
+      console.log(`📄 Small document detected (${docSize} chars), using 20s timeout`);
+      return 20000;
+    }
+  }
+  
+  // Use processing hints for smarter timeout calculation (only for complex requests)
+  if (body.processingHints && hasAttachments) {
+    const hints = body.processingHints;
+    console.log(`🕐 Calculating timeout using processing hints:`, hints);
+    
+    // PDF documents typically need more processing time
+    if (hints.documentType === 'pdf') {
+      if (hints.contentLength > 20000) {
+        console.log(`Using maximum timeout (45000ms) for large PDF document: ${hints.contentLength} chars`);
+        return 45000; // 45 seconds for large PDFs
+      } else if (hints.contentLength > 10000) {
+        console.log(`Using extended timeout (35000ms) for medium PDF document: ${hints.contentLength} chars`);
+        return 35000; // 35 seconds for medium PDFs
+      } else {
+        console.log(`Using enhanced timeout (25000ms) for small PDF document: ${hints.contentLength} chars`);
+        return 25000; // 25 seconds for small PDFs
+      }
+    }
+    
+    // DOC files processing
+    if (hints.documentType === 'doc' || hints.documentType === 'docx') {
+      if (hints.contentLength > 15000) {
+        console.log(`Using enhanced timeout (35000ms) for large DOC document: ${hints.contentLength} chars`);
+        return 35000;
+      } else {
+        console.log(`Using enhanced timeout (25000ms) for DOC document: ${hints.contentLength} chars`);
+        return 25000;
+      }
+    }
+    
+    // Analysis vs Summary - Analysis needs more time
+    if (hints.analysisType === 'analysis' && hints.contentLength > 5000) {
+      console.log(`Using analysis timeout (30000ms) for detailed analysis: ${hints.contentLength} chars`);
+      return 30000;
+    }
+  }
+  
+  // Check for code-related requests (only if no fast track)
+  const hasCodeKeywords = messages.some(msg => 
+    msg.content && /\b(code|function|class|variable|algorithm|program|java|python|javascript|html|css)\b/i.test(msg.content)
+  );
+  
+  // Fallback to original logic for non-hinted requests
+  if (hasAttachments) {
+    const hasPDFContent = body.attachments.some(att => 
+      att.content && att.content.length > 5000 || 
+      att.name && att.name.toLowerCase().includes('.pdf')
+    );
+    
+    if (hasPDFContent || totalContentLength > 10000) {
+      console.log(`Using maximum timeout (45000ms) for large PDF/document request:`, {
+        hasAttachments,
+        totalContentLength,
+        attachmentSizes: body.attachments.map(att => att.content?.length || 0)
+      });
+      return 45000; // 45 seconds for large PDFs
+    }
+  }
+  
+  if (hasAttachments || hasLargeContent || totalContentLength > 2000 || hasCodeKeywords) {
+    console.log(`Using extended timeout (${ATTACHMENT_TIMEOUT_MS}ms) for complex request:`, {
+      hasAttachments,
+      hasLargeContent,
+      totalContentLength,
+      hasCodeKeywords
+    });
+    return ATTACHMENT_TIMEOUT_MS;
+  }
+  
+  console.log(`Using base timeout (${BASE_TIMEOUT_MS}ms) for normal request`);
+  return BASE_TIMEOUT_MS;
+}
+
+/**
+ * Selects the best endpoint based on availability and response time
+ * @returns {string} The URL of the selected endpoint
+ */
+function selectEndpoint() {
+  const now = Date.now();
+  
+  // First, check circuit breakers and reset if timeout has passed
+  endpointStats.forEach(endpoint => {
+    if (endpoint.circuitBreakerOpen && (now - endpoint.lastCircuitBreakerCheck) > CIRCUIT_BREAKER_TIMEOUT) {
+      console.log(`Resetting circuit breaker for ${endpoint.url}`);
+      endpoint.circuitBreakerOpen = false;
+      endpoint.consecutiveFailures = 0;
+      endpoint.lastCircuitBreakerCheck = now;
+    }
+  });
+  
+  // Check if any unavailable endpoints should be retried
+  endpointStats.forEach(endpoint => {
+    if (!endpoint.isAvailable && (now - endpoint.lastChecked) > RETRY_INTERVAL_MS) {
+      console.log(`Marking ${endpoint.url} as available for retry`);
+      endpoint.isAvailable = true;
+      endpoint.failCount = 0;
+      endpoint.consecutiveFailures = 0;
+    }
+  });
+
+  // Filter for available endpoints that don't have circuit breaker open
+  const availableEndpoints = endpointStats.filter(endpoint => 
+    endpoint.isAvailable && !endpoint.circuitBreakerOpen
+  );
+  
+  if (availableEndpoints.length === 0) {
+    // All endpoints are unavailable or circuit breaker is open, reset ALL endpoints for retry
+    console.log('⚠️ All endpoints unavailable or circuit breaker open, resetting ALL endpoints for retry');
+    endpointStats.forEach(endpoint => {
+      endpoint.isAvailable = true;
+      endpoint.failCount = Math.max(0, endpoint.failCount - 1); // Reduce fail count
+      endpoint.consecutiveFailures = 0;
+      endpoint.circuitBreakerOpen = false;
+    });
+    return endpointStats[0].url;
+  }
+  
+  // Choose the fastest available endpoint with the least recent activity
+  availableEndpoints.sort((a, b) => {
+    // First prioritize by availability and circuit breaker status
+    if (a.circuitBreakerOpen !== b.circuitBreakerOpen) {
+      return a.circuitBreakerOpen ? 1 : -1;
+    }
+    // Then by consecutive failures (prefer lower failures)
+    if (a.consecutiveFailures !== b.consecutiveFailures) {
+      return a.consecutiveFailures - b.consecutiveFailures;
+    }
+    // Then prioritize endpoints with faster response times (but only if they've been tested)
+    if (a.lastResponseTime > 0 && b.lastResponseTime > 0) {
+      return a.lastResponseTime - b.lastResponseTime;
+    }
+    // Finally, if response times are equal or untested, prioritize by least total failures
+    return a.failCount - b.failCount;
+  });
+  
+  return availableEndpoints[0].url;
+}
+
+/**
+ * Updates endpoint statistics based on request success/failure
+ * @param {string} url - The endpoint URL
+ * @param {boolean} success - Whether the request was successful
+ * @param {number} responseTime - Response time in milliseconds
+ */
+function updateEndpointStats(url, success, responseTime) {
+  const endpoint = endpointStats.find(e => e.url === url);
+  if (!endpoint) return;
+  
+  endpoint.lastChecked = Date.now();
+  
+  if (success) {
+    endpoint.isAvailable = true;
+    endpoint.lastResponseTime = responseTime;
+    endpoint.consecutiveFailures = 0;
+    endpoint.circuitBreakerOpen = false;
+    // Gradually reduce fail count on success
+    if (endpoint.failCount > 0) {
+      endpoint.failCount = Math.max(0, endpoint.failCount - 1);
+    }
+  } else {
+    endpoint.failCount++;
+    endpoint.consecutiveFailures++;
+    
+    // Check if we should open the circuit breaker
+    if (endpoint.consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
+      console.log(`Opening circuit breaker for ${url} after ${endpoint.consecutiveFailures} consecutive failures`);
+      endpoint.circuitBreakerOpen = true;
+      endpoint.lastCircuitBreakerCheck = Date.now();
+    }
+    
+    if (endpoint.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      console.log(`Marking ${url} as unavailable after ${endpoint.consecutiveFailures} consecutive failures`);
+      endpoint.isAvailable = false;
+    }
+  }
+}
+
+/**
+ * Performs a health check on all endpoints
+ */
+async function healthCheck() {
+  console.log('🔍 Performing health check on all endpoints');
+  
+  const checks = endpoints.map(async (endpointConfig) => {
+    const endpoint = endpointStats.find(e => e.url === endpointConfig.url);
+    if (!endpoint) return;
+    
+    try {
+      const startTime = Date.now();
+      // Use endpoint-specific format for health check
+      const testMessages = [{ role: 'user', content: 'test' }];
+      const requestConfig = formatRequestForEndpoint(endpointConfig.url, testMessages, process.env.AI_API_KEY || 'test', 256); // Use smaller tokens for health check
+      
+      const response = await axios.post(requestConfig.url, requestConfig.data, {
+        timeout: 8000, // Increased timeout for health check
+        headers: requestConfig.headers
+      });
+      
+      const responseTime = Date.now() - startTime;
+      updateEndpointStats(endpointConfig.url, true, responseTime);
+      
+      // Parse response to get content for logging
+      const parsedResponse = parseResponseFromEndpoint(response, endpointConfig.url);
+      console.log(`✅ Health check for ${endpointConfig.name}: OK (${responseTime}ms)`);
+      console.log(`   Response: ${parsedResponse.content?.substring(0, 50) || 'No content'}...`);
+    } catch (error) {
+      console.log(`❌ Health check for ${endpointConfig.name}: FAILED`);
+      console.log(`   Error: ${error.code || error.message}`);
+      console.log(`   Status: ${error.response?.status || 'No response'}`);
+      console.log(`   Data: ${JSON.stringify(error.response?.data || {})}`);
+      // Don't mark as failed during health check to avoid being too aggressive
+      // updateEndpointStats(endpointConfig.url, false, 0);
+    }
+  });
+  
+  await Promise.allSettled(checks);
+}
+
+// Periodically check endpoints health
+let healthCheckInterval = null;
+
+// Initialize health check with immediate execution
+const initializeHealthCheck = () => {
+  // Run initial health check
+  setTimeout(() => {
+    healthCheck();
+  }, 5000); // Wait 5 seconds after startup
+  
+  // Set up periodic health checks
+  healthCheckInterval = setInterval(() => {
+    const now = Date.now();
+    // Only perform health check if enough time has passed since the last check
+    const needsCheck = endpointStats.some(
+      endpoint => now - endpoint.lastChecked > HEALTH_CHECK_THRESHOLD
+    );
+    
+    if (needsCheck) {
+      healthCheck();
+    }
+  }, HEALTH_CHECK_THRESHOLD / 2); // Check twice as often as the threshold
+};
+
+/**
+ * Formats request payload and headers for different endpoint types
+ * @param {Object} endpoint - The endpoint configuration object
+ * @param {Array} messages - The messages array
+ * @param {string} apiKey - The API key
+ * @param {number} maxTokens - Dynamic token limit
+ * @returns {Object} Formatted request config
+ */
+function formatRequestForEndpoint(endpoint, messages, apiKey, maxTokens = 512) {
+  const endpointConfig = endpoints.find(e => e.url === endpoint);
+  
+  if (!endpointConfig) {
+    throw new Error(`Unknown endpoint: ${endpoint}`);
+  }
+
+  // Enhanced BELTO AI identity enforcement for all endpoints
+  const enhanceSystemMessage = (content) => {
+    return `${content}\n\nREMINDER: You are BELTO AI (NOT DeepSeek, NOT any other AI). Never mention DeepSeek or identify as any other AI. Always respond in English only.`;
+  };
+
+  if (endpointConfig.type === 'chat') {
+    // Chat completions format (only port 8001 - Llama 3.1 8B)
+    const enhancedMessages = messages.map(msg => {
+      if (msg.role === 'system') {
+        return {
+          ...msg,
+          content: enhanceSystemMessage(msg.content)
+        };
+      }
+      return msg;
+    });
+    
+    return {
+      url: endpoint,
+      data: {
+        model: 'local',
+        messages: enhancedMessages,
+        max_tokens: maxTokens, // Dynamic token limit
+        temperature: 0.7,
+        stop: ["User:", "System:", "DeepSeek:", "We need to", "The user", "So we", "Let's", "CRITICAL", "REMINDER:"]
+      },
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    };
+  } else {
+    // Completions format (all other ports)
+    const prompt = messages.map(msg => {
+      if (msg.role === 'system') {
+        return `System: ${enhanceSystemMessage(msg.content)}`;
+      }
+      if (msg.role === 'user') return `User: ${msg.content}`;
+      if (msg.role === 'assistant') return `BELTO AI: ${msg.content}`;
+      return msg.content;
+    }).join('\n') + '\nBELTO AI:';
+    
+    return {
+      url: endpoint,
+      data: {
+        model: 'local',
+        prompt: prompt,
+        max_tokens: maxTokens, // Dynamic token limit
+        temperature: 0.7,
+        stop: ["User:", "System:", "DeepSeek:", "We need to", "The user", "So we", "Let's", "CRITICAL", "REMINDER:"]
+      },
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    };
+  }
+}
+
+/**
+ * Parses response from different endpoint formats
+ * @param {Object} response - The axios response object
+ * @param {string} endpoint - The endpoint URL
+ * @returns {Object} Normalized response
+ */
+function parseResponseFromEndpoint(response, endpoint) {
+  let content = '';
+  let usage = {
+    total_tokens: 0,
+    prompt_tokens: 0,
+    completion_tokens: 0
+  };
+
+  const endpointConfig = endpoints.find(e => e.url === endpoint);
+  
+  if (endpointConfig && endpointConfig.type === 'chat') {
+    // Chat completions format (port 8001)
+    content = response.data.choices?.[0]?.message?.content || '';
+    usage = response.data.usage || {
+      total_tokens: 0,
+      prompt_tokens: 0,
+      completion_tokens: 0
+    };
+  } else {
+    // Completions format (all other ports)
+    content = response.data.choices?.[0]?.text || response.data.content || '';
+    usage = response.data.usage || {
+      total_tokens: response.data.tokens_predicted || 0,
+      prompt_tokens: response.data.tokens_evaluated || 0,
+      completion_tokens: response.data.tokens_predicted || 0
+    };
+  }
+
+  // Clean up response content to prevent unwanted additions
+  content = cleanResponseContent(content);
+
+  return {
+    content,
+    usage
+  };
+}
+
+/**
+ * Clean response content to remove unwanted patterns and ensure focused responses
+ * @param {string} content - The AI response content
+ * @returns {string} Cleaned content
+ */
+function cleanResponseContent(content) {
+  if (!content || typeof content !== 'string') {
+    return '';
+  }
+
+  // STEP 1: Remove system reasoning artifacts and internal commentary
+  let cleanedContent = content
+    // First, extract the actual response content that comes after reasoning
+    .replace(/.*?(?:respond with|say|produce):\s*/gi, '')
+    
+    // Remove system reasoning patterns at the beginning
+    .replace(/^(?:We need to|The user|So we|Let's|We must)[^.]*[.:]?\s*/gi, '')
+    
+    // Remove critical identity rules exposure
+    .replace(/CRITICAL IDENTITY RULES[^:]*:[^}]*}/gis, '')
+    .replace(/CRITICAL IDENTITY RULES FOR BELTO AI[^:]*:[^}]*}/gis, '')
+    .replace(/REMINDER:[^}]*}/gis, '')
+    
+    // Remove formatting artifacts
+    .replace(/<\|end\|><\|start\|>assistant<\|channel\|>final<\|message\|>/gi, '')
+    .replace(/<\|[^|]*\|>/g, '')
+    .replace(/\|start\||\|end\|/gi, '')
+    
+    // Remove any mentions of being DeepSeek or other AI systems
+    .replace(/I am DeepSeek[^.]*\./gi, '')
+    .replace(/As DeepSeek[^,]*,?/gi, '')
+    .replace(/I'm DeepSeek[^.]*\./gi, '')
+    .replace(/DeepSeek[^.]*\./gi, '')
+    
+    // Remove meta-commentary about response generation
+    .replace(/That is (fine|good|correct)[^.]*\./gi, '')
+    .replace(/Now[,\s]*(everything is working fine|let's produce|we can)[^.]*\./gi, '')
+    .replace(/The guidelines say[^.]*\./gi, '')
+    .replace(/According to[^.]*guidelines[^.]*\./gi, '')
+    
+    // Remove unnecessary system-like introductions
+    .replace(/^(Sure,?\s*|Of course,?\s*|Certainly,?\s*|Absolutely,?\s*)+/gi, '')
+    .replace(/As requested[^,]*,?\s*/gi, '')
+    .replace(/As instructed[^,]*,?\s*/gi, '')
+    
+    // Clean up spacing
+    .replace(/\s+/g, ' ')
+    .trim()
+    
+    // Clean up code formatting - ensure proper line breaks in code blocks
+    .replace(/```(\w+)\s*([^`]+)```/g, (match, language, code) => {
+      let cleanCode = code
+        // Fix Python function formatting
+        .replace(/def\s+(\w+)\([^)]*\):\s*([^#\n]+)/g, (match, funcName, funcBody) => {
+          const formatted = funcBody
+            .replace(/;\s*/g, '\n    ')
+            .replace(/return\s+/g, '\n    return ')
+            .replace(/if\s+/g, '\n    if ')
+            .replace(/else:\s*/g, '\n    else:\n        ');
+          return `def ${funcName}(${match.match(/\([^)]*\)/)[0]}:\n    ${formatted}`;
+        })
+        // Fix Java/C++ style functions
+        .replace(/(\w+\s+\w+\([^)]*\)\s*{[^}]+})/g, (match) => {
+          return match
+            .replace(/{/g, '{\n    ')
+            .replace(/;(?!\s*})/g, ';\n    ')
+            .replace(/}/g, '\n}');
+        })
+        // Fix general statement separation
+        .replace(/;\s*(?=\w)/g, ';\n    ')
+        .replace(/{\s*(?=\w)/g, '{\n    ')
+        .replace(/}\s*(?=\w)/g, '}\n    ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      return `\`\`\`${language}\n${cleanCode}\n\`\`\``;
+    });
+
+  // STEP 2: Split into sentences and filter out system reasoning while preserving educational content
+  const sentences = cleanedContent.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 0);
+  const cleanSentences = sentences.filter(sentence => {
+    const lower = sentence.toLowerCase();
+    
+    // Filter out system reasoning patterns but preserve educational explanations
+    if (lower.includes('we need to') || 
+        lower.includes('the user') || 
+        lower.includes('so we respond') ||
+        lower.includes('let\'s say') ||
+        lower.includes('we must') ||
+        lower.includes('the conversation') ||
+        lower.includes('critical identity') ||
+        lower.includes('guidelines say') ||
+        lower.includes('that is fine') ||
+        lower.includes('now everything')) {
+      return false;
+    }
+    
+    // Keep actual educational responses and explanations
+    return true;
+  });
+
+  // STEP 3: Reconstruct clean content
+  if (cleanSentences.length > 0) {
+    cleanedContent = cleanSentences.join(' ').replace(/\s+/g, ' ');
+  }
+
+  // STEP 4: Final cleanup
+  cleanedContent = cleanedContent
+    // Clean up multiple newlines and extra whitespace
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\s{3,}/g, ' ')
+    .replace(/\.\s*\./g, '.')
+    .replace(/\s+([.!?])/g, '$1')
+    .trim();
+
+  // STEP 5: Ensure the response starts appropriately for BELTO AI
+  if (cleanedContent.length > 0 && !cleanedContent.match(/^(Hello|Hi|I am BELTO|I'm BELTO)/i)) {
+    // For greeting responses, make sure they're properly formatted
+    if (cleanedContent.toLowerCase().includes('hello') || cleanedContent.toLowerCase().includes('how can i help')) {
+      // This is already a proper greeting, keep as is
+    } else if (cleanedContent.length < 50 && cleanedContent.includes('!')) {
+      // Short exclamatory responses are likely proper greetings
+    } else {
+      // For other responses, ensure they don't start with system artifacts
+      const firstChar = cleanedContent.charAt(0);
+      if (firstChar !== firstChar.toUpperCase()) {
+        cleanedContent = firstChar.toUpperCase() + cleanedContent.slice(1);
+      }
+    }
+  }
+
+  return cleanedContent;
+}
+
+// Initialize on module load
+if (typeof window === 'undefined') { // Only run on server side
+  initializeHealthCheck();
+}
+
+export async function POST(request) {
+  console.log('POST request received to AI proxy');
+
+  try {
+    const body = await request.json();
+    console.log('Request body structure:', Object.keys(body));
+    console.log('Request body details:', {
+      hasPrompt: !!body.prompt,
+      hasMessage: !!body.message,
+      hasMessages: !!body.messages,
+      hasAttachments: !!body.attachments,
+      attachmentCount: body.attachments?.length || 0
+    });
+
+    // Get API key from environment variables
+    const apiKey = process.env.AI_API_KEY;
+
+    if (!apiKey) {
+      console.error('AI API key is not configured');
+      return NextResponse.json(
+        { error: 'AI API key is not configured on the server' },
+        { status: 500 }
+      );
+    }
+
+    // Add request validation
+    if (!body.prompt && !body.message && (!body.messages || body.messages.length === 0)) {
+      return NextResponse.json(
+        { error: "No message content provided" },
+        { status: 400 }
+      );
+    }
+
+    // Initialize messages array
+    let messages = [];
+   
+    // Include conversation history if provided
+    if (body.history && Array.isArray(body.history) && body.history.length > 0) {
+      console.log('Using provided conversation history, length:', body.history.length);
+      messages = [...body.history];
+    }
+
+    // Handle different request formats - both from generateAIResponse and generateAIResponseWithPreferences
+    if (body.messages && Array.isArray(body.messages)) {
+      // Direct message array format - append to any existing history
+      if (messages.length === 0) {
+        messages = body.messages;
+      } else {
+        // Only add messages that aren't duplicates in the history
+        body.messages.forEach(newMsg => {
+          const isDuplicate = messages.some(existingMsg =>
+            existingMsg.role === newMsg.role &&
+            existingMsg.content === newMsg.content
+          );
+          if (!isDuplicate) {
+            messages.push(newMsg);
+          }
+        });
+      }
+    }
+   
+    // Add the current prompt/message if it's not already in the history
+    if (body.prompt) {
+      // For prompts with attachments, create optimized content
+      let messageContent = body.prompt;
+      
+      if (body.attachments && body.attachments.length > 0) {
+        const attachment = body.attachments[0];
+        const contentLength = attachment.content?.length || 0;
+        
+        if (contentLength > 10000) {
+          // For large documents, don't duplicate content in the prompt
+          messageContent = body.prompt.replace(/\n\nAttached document content:\n.*$/s, '') + 
+            `\n\n--- DOCUMENT ANALYSIS REQUEST ---\nDocument: ${attachment.name || 'Uploaded Document'}\nSize: ${Math.floor(contentLength/1000)}KB\n\nPlease analyze the attached document content and respond to the user's request.`;
+        }
+      }
+      
+      const newUserMessage = { role: 'user', content: messageContent };
+      const isDuplicate = messages.some(existingMsg =>
+        existingMsg.role === 'user' &&
+        existingMsg.content.includes(body.prompt.split('\n')[0]) // Check first line to avoid duplicates
+      );
+      if (!isDuplicate) {
+        messages.push(newUserMessage);
+      }
+    } else if (body.message) {
+      const newUserMessage = { role: 'user', content: body.message };
+      const isDuplicate = messages.some(existingMsg =>
+        existingMsg.role === 'user' &&
+        existingMsg.content === body.message
+      );
+      if (!isDuplicate) {
+        messages.push(newUserMessage);
+      }
+    }
+
+    // Make sure all messages have the required 'content' field
+    messages = messages.map(msg => {
+      if (!msg.content && msg.message) {
+        return { ...msg, content: msg.message };
+      }
+      return msg;
+    });
+
+    // Enhanced document processing with processing hints support
+    if (body.attachments && body.attachments.length > 0) {
+      console.log('📄 Processing attachments with hints:', body.processingHints);
+      
+      for (let attachment of body.attachments) {
+        if (attachment.content) {
+          let processedContent = attachment.content;
+          const contentLength = attachment.content.length;
+          
+          // Use processing hints to optimize content handling
+          if (body.processingHints) {
+            const hints = body.processingHints;
+            console.log(`📋 Using processing hints: Type=${hints.documentType}, Length=${hints.contentLength}, Analysis=${hints.analysisType}`);
+            
+            // Adjust processing based on document type and analysis type
+            if (hints.documentType === 'pdf' && hints.analysisType === 'summary') {
+              // For PDF summaries, focus on key sections
+              if (contentLength > 15000) {
+                const beginning = attachment.content.substring(0, 8000);
+                const ending = attachment.content.substring(contentLength - 6000);
+                processedContent = `${beginning}\n\n[--- DOCUMENT SUMMARY OPTIMIZED FOR PDF ---]\n[Original document: ${Math.floor(contentLength/1000)}KB PDF file]\n[Processing mode: Summary generation]\n\n${ending}`;
+                console.log(`PDF summary optimization: ${contentLength} → ${processedContent.length} characters`);
+              }
+            } else if (hints.analysisType === 'analysis') {
+              // For detailed analysis, preserve more content structure
+              if (contentLength > 20000) {
+                const beginning = attachment.content.substring(0, 12000);
+                const middle = attachment.content.substring(Math.floor(contentLength * 0.4), Math.floor(contentLength * 0.4) + 6000);
+                const ending = attachment.content.substring(contentLength - 8000);
+                processedContent = `${beginning}\n\n[--- DOCUMENT ANALYSIS MODE ---]\n[Full analysis requested for ${hints.documentType.toUpperCase()} document]\n[Key sections preserved for detailed analysis]\n\n${middle}\n\n[--- CONTINUING TO CONCLUSION ---]\n\n${ending}`;
+                console.log(`Document analysis optimization: ${contentLength} → ${processedContent.length} characters`);
+              }
+            }
+          } else {
+            // Fallback to original logic if no processing hints
+            if (contentLength > 15000) {
+              console.log(`Large attachment detected (${contentLength} chars), applying smart chunking...`);
+              
+              if (contentLength > 50000) {
+                const beginning = attachment.content.substring(0, 8000);
+                const middle = attachment.content.substring(Math.floor(contentLength * 0.4), Math.floor(contentLength * 0.4) + 4000);
+                const ending = attachment.content.substring(contentLength - 8000);
+                processedContent = `${beginning}\n\n[... Document summary: This is a ${Math.floor(contentLength/1000)}KB document. Key sections included for analysis ...]\n\n${middle}\n\n[... continuing to end section ...]\n\n${ending}`;
+              } else {
+                const firstPart = attachment.content.substring(0, 12000);
+                const lastPart = attachment.content.substring(contentLength - 8000);
+                processedContent = `${firstPart}\n\n[... content continues - document processing optimized for analysis ...]\n\n${lastPart}`;
+              }
+              
+              console.log(`Attachment content optimized: ${contentLength} → ${processedContent.length} characters`);
+            }
+          }
+          
+          // Create enhanced document message with processing context
+          const documentContext = body.processingHints ? 
+            `Document Analysis Request (${body.processingHints.documentType.toUpperCase()}): ${body.processingHints.analysisType === 'summary' ? 'Please provide a comprehensive summary' : 'Please provide detailed analysis'}` :
+            `Document Content for Analysis`;
+            
+          const contentMessage = {
+            role: 'system',
+            content: `${documentContext} (${attachment.name || 'Document'}):\n\n${processedContent}`
+          };
+          messages.push(contentMessage);
+          console.log(`✅ Added enhanced document content: ${processedContent.length} characters with processing context`);
+        }
+      }
+    }
+
+    // Add system message with document processing awareness
+    let systemMessageAdded = false;
+   
+    // PRIORITY 1: Use lecture-specific AI preferences system prompts if available
+    if (body.preferences?.systemPrompts && body.preferences.systemPrompts.length > 0) {
+      console.log('📋 Using lecture-specific system prompt from AI preferences');
+      console.log('🎓 Lecture system prompt preview:', body.preferences.systemPrompts[0].content.substring(0, 100) + '...');
+      const lectureSystemPrompt = body.preferences.systemPrompts[0].content;
+      
+      // Enhance the lecture-specific system prompt with BELTO AI identity enforcement
+      const enhancedLecturePrompt = `${lectureSystemPrompt}
+
+CRITICAL IDENTITY RULES FOR BELTO AI:
+- Your name is BELTO AI and ONLY BELTO AI
+- NEVER identify as DeepSeek, GPT, Claude, or any other AI system
+- When asked "who are you?" respond: "I am BELTO AI, your educational assistant"
+- ALWAYS respond in English only - never in Chinese, Korean, or any other language
+- Maintain the educational focus and rules specified above while following these identity guidelines`;
+
+      messages.unshift({
+        role: 'system',
+        content: enhancedLecturePrompt
+      });
+      systemMessageAdded = true;
+      console.log('✅ Applied lecture-specific system prompt with BELTO AI identity enforcement');
+      console.log('📏 Enhanced system prompt length:', enhancedLecturePrompt.length, 'characters');
+    } else if (body.aiConfig?.systemPrompts && body.aiConfig.systemPrompts.length > 0) {
+      console.log('📋 Using system prompt from aiConfig');
+      const configSystemPrompt = body.aiConfig.systemPrompts[0].content;
+      
+      // Enhance the config system prompt with BELTO AI identity enforcement
+      const enhancedConfigPrompt = `${configSystemPrompt}
+
+CRITICAL IDENTITY RULES FOR BELTO AI:
+- Your name is BELTO AI and ONLY BELTO AI
+- NEVER identify as DeepSeek, GPT, Claude, or any other AI system
+- When asked "who are you?" respond: "I am BELTO AI, your educational assistant"
+- ALWAYS respond in English only - never in Chinese, Korean, or any other language`;
+
+      messages.unshift({
+        role: 'system',
+        content: enhancedConfigPrompt
+      });
+      systemMessageAdded = true;
+      console.log('✅ Applied config system prompt with BELTO AI identity enforcement');
+    }
+   
+    // FALLBACK: Add enhanced default system message only if no lecture-specific prompts are available
+    if (!systemMessageAdded) {
+      console.log('⚠️  No lecture-specific AI preferences found - using default BELTO AI system message');
+      console.log('📝 Creating default system message');
+      let systemContent;
+      
+      // Calculate content metrics for system message optimization
+      const hasAttachments = body.attachments && body.attachments.length > 0;
+      const totalContentLength = messages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
+      
+      console.log('System message metrics:', { hasAttachments, totalContentLength });
+      
+      // COMPREHENSIVE system messages for accurate responses
+      const baseSystemPrompt = `You are BELTO AI, an educational assistant designed to help students with academic tasks. Your responses should be comprehensive, complete, and focused on providing thorough educational support.
+
+IDENTITY:
+- Your name is BELTO AI
+- You are an educational assistant for students
+- When asked "who are you?" respond: "I am BELTO AI, your educational assistant designed to help students with academic tasks and educational activities"
+- Always respond in English only
+
+RESPONSE RULES:
+- Provide COMPLETE and THOROUGH responses to all questions
+- Give comprehensive explanations with examples when helpful
+- Include step-by-step solutions for complex problems
+- Offer additional context and related information when relevant
+- Be detailed and educational in your responses
+- Do not cut responses short or leave explanations incomplete
+- For greetings like "hi" or "hello", respond warmly and ask how you can help
+- Always aim to fully address the user's question or request
+
+EDUCATIONAL FOCUS:
+- Prioritize learning outcomes and understanding
+- Provide detailed explanations that help students learn
+- Include relevant examples and applications
+- Offer study tips and learning strategies when appropriate
+- Connect concepts to broader academic contexts
+
+Your purpose is to provide complete, comprehensive educational support to students.`;
+
+      if (!hasAttachments && totalContentLength < 100) {
+        // Brief but complete system message for simple requests
+        systemContent = `${baseSystemPrompt}\n\nRespond as BELTO AI with friendly, concise educational support.`;
+      } else if (!hasAttachments && totalContentLength < 200) {
+        // Standard system message for simple requests
+        systemContent = `${baseSystemPrompt}\n\nProvide helpful educational responses as BELTO AI to support student learning.`;
+      } else if (body.attachments && body.attachments.length > 0) {
+        // Enhanced system message for document processing
+        const documentTypes = body.attachments.map(att => att.name?.split('.').pop() || 'document').join(', ');
+        const processingType = body.processingHints?.analysisType || 'analysis';
+        
+        systemContent = `${baseSystemPrompt}
+
+As BELTO AI, you are processing ${documentTypes} file(s) for educational purposes. Provide a ${processingType === 'summary' ? 'comprehensive and detailed summary' : 'thorough and complete analysis'} focused on:
+- Comprehensive educational insights and learning objectives
+- All important academic concepts and details with explanations
+- Complete analysis that covers all relevant aspects
+- Clear, detailed explanations that support deep learning
+- Actionable information for comprehensive student understanding
+- Step-by-step breakdowns when applicable
+- Related concepts and connections to broader topics`;
+        
+        if (body.processingHints?.documentType === 'pdf') {
+          systemContent += '\n- Detailed attention to document structure, headings, and all key sections for comprehensive academic organization';
+        }
+      } else {
+        // Standard system message for normal requests
+        systemContent = `${baseSystemPrompt}\n\nAs BELTO AI, provide educational support using conversation history for context.`;
+      }
+      
+      messages.unshift({
+        role: 'system',
+        content: systemContent
+      });
+    }
+
+    // Ensure each message has content and remove any empty messages
+    const validMessages = messages.filter(msg => msg.content);
+    
+    // Apply preprocessing rules if provided
+    let processedMessages = validMessages;
+    if (body.preferences?.processingRules) {
+      console.log('🔧 Applying preprocessing rules to messages');
+      processedMessages = validMessages.map(msg => ({
+        ...msg,
+        content: applyPreprocessingRules(msg.content, body.preferences.processingRules)
+      }));
+    }
+    
+    // Optimize message content for large documents
+    const optimizedMessages = processedMessages.map(msg => {
+      if (msg.content && msg.content.length > 20000) {
+        console.log(`Large message content detected (${msg.content.length} chars), optimizing...`);
+        // For very large content, take beginning and end for context
+        const beginning = msg.content.substring(0, 12000);
+        const ending = msg.content.substring(msg.content.length - 8000);
+        return {
+          ...msg,
+          content: `${beginning}\n\n[... document content summarized for efficient processing ...]\n\n${ending}`
+        };
+      }
+      return msg;
+    });
+   
+    if (optimizedMessages.length === 0) {
+      return NextResponse.json(
+        { error: "No valid messages with content provided" },
+        { status: 400 }
+      );
+    }
+
+    console.log('Final message count being sent to AI:', optimizedMessages.length);
+
+    // Determine appropriate timeout based on request complexity
+    const requestTimeout = getTimeoutForRequest(body, optimizedMessages);
+
+    // DYNAMIC TOKEN MANAGEMENT SYSTEM - Intelligent scaling based on content and context
+    let maxTokens;
+    try {
+      console.log('🔍 Calling calculateDynamicTokenLimit...');
+      console.log('🔍 Body keys:', Object.keys(body));
+      console.log('🔍 Messages length:', optimizedMessages.length);
+      maxTokens = calculateDynamicTokenLimit(body, optimizedMessages);
+      console.log(`🧠 Dynamic token limit calculated: ${maxTokens} tokens`);
+    } catch (error) {
+      console.error('❌ Error in calculateDynamicTokenLimit:', error.message);
+      console.error('❌ Error stack:', error.stack);
+      console.error('❌ Error name:', error.name);
+      console.error('❌ Input body:', JSON.stringify(body, null, 2));
+      console.error('❌ Input messages:', JSON.stringify(optimizedMessages, null, 2));
+      
+      // Simple fallback calculation without dynamic functions
+      const totalContentLength = optimizedMessages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
+      const hasAttachments = body.attachments && body.attachments.length > 0;
+      
+      if (!hasAttachments && totalContentLength < 100) {
+        maxTokens = 400;
+        console.log(`🔄 Using simple fallback for greeting: ${maxTokens} tokens`);
+      } else if (!hasAttachments && totalContentLength < 500) {
+        maxTokens = 600;
+        console.log(`🔄 Using simple fallback for simple content: ${maxTokens} tokens`);
+      } else if (hasAttachments) {
+        const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
+        if (docSize > 50000) {
+          maxTokens = 1500;
+        } else {
+          maxTokens = 1000;
+        }
+        console.log(`🔄 Using simple fallback for document: ${maxTokens} tokens`);
+      } else {
+        maxTokens = 800;
+        console.log(`🔄 Using simple fallback default: ${maxTokens} tokens`);
+      }
+    }
+
+    // Prepare the request payload with dynamic optimization
+    const aiRequestPayload = {
+      model: body.aiConfig?.model || body.preferences?.model || 'default-model',
+      messages: optimizedMessages,
+      temperature: body.aiConfig?.temperature || body.preferences?.temperature || 0.7,
+      max_tokens: body.aiConfig?.maxTokens || body.preferences?.maxTokens || maxTokens, // Respect user preferences but default to dynamic calculation
+      stream: body.aiConfig?.streaming || body.preferences?.streaming || false, // Add streaming support
+    };
+
+    console.log('Request payload structure:', Object.keys(aiRequestPayload));
+    console.log('Message count:', aiRequestPayload.messages.length);
+    console.log('Using timeout:', requestTimeout + 'ms');
+    console.log('Token limit:', aiRequestPayload.max_tokens);
+    console.log('Streaming enabled:', aiRequestPayload.stream);
+    console.log('Admin preferences streaming:', body.preferences?.streaming);
+    console.log('AI config streaming:', body.aiConfig?.streaming);
+    
+    // Validate payload before sending to prevent silent failures
+    if (!aiRequestPayload.messages || aiRequestPayload.messages.length === 0) {
+      console.error('❌ Empty messages array in payload');
+      return NextResponse.json(
+        { error: "Invalid request: No messages to process" },
+        { status: 400 }
+      );
+    }
+    
+    if (!aiRequestPayload.model) {
+      console.error('❌ No model specified in payload');
+      return NextResponse.json(
+        { error: "Invalid request: No model specified" },
+        { status: 400 }
+      );
+    }
+    
+    console.log('✅ Payload validation passed, proceeding with AI request');
+    
+    // ADAPTIVE retry logic: more retries for document/large requests
+    let lastError = null;
+    let maxRetries;
+    if (hasAttachments) {
+      // Always try all endpoints for each retry for attachments
+      maxRetries = endpoints.length * 2; // Try each endpoint at least twice
+    } else if (!hasAttachments && totalContentLength < 200) {
+      maxRetries = 2;
+    } else if (!hasAttachments && totalContentLength < 1000) {
+      maxRetries = 3;
+    } else {
+      maxRetries = 3;
+    }
+
+    let attemptedEndpoints = new Set(); // Track which endpoints we've tried
+    let endpointAttemptOrder = [...endpoints.map(e => e.url)];
+    let endpointIndex = 0;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // For attachments, rotate through all endpoints before fallback
+        let selectedEndpoint;
+        if (hasAttachments) {
+          selectedEndpoint = endpoints[endpointIndex % endpoints.length].url;
+          endpointIndex++;
+        } else {
+          selectedEndpoint = selectEndpoint();
+        }
+
+        // If we've already tried this endpoint and it's the only one, skip further attempts
+        if (attemptedEndpoints.has(selectedEndpoint) && attemptedEndpoints.size >= endpoints.length) {
+          console.log(`All endpoints tried and failed, skipping attempt ${attempt}`);
+          // For document/large requests, always try all endpoints before fallback
+          if (hasAttachments && attempt < maxRetries) {
+            endpointStats.forEach(endpoint => {
+              endpoint.isAvailable = true;
+              endpoint.consecutiveFailures = Math.max(0, endpoint.consecutiveFailures - 1);
+              endpoint.circuitBreakerOpen = false;
+            });
+            continue;
+          }
+          break;
+        }
+
+        attemptedEndpoints.add(selectedEndpoint);
+        console.log(`Attempt ${attempt}: Selected endpoint for request: ${selectedEndpoint}`);
+        
+        // Format request for the specific endpoint type with dynamic tokens
+        const requestConfig = formatRequestForEndpoint(selectedEndpoint, optimizedMessages, apiKey, maxTokens);
+        
+        // Add detailed logging for debugging
+        const endpointConfig = endpoints.find(e => e.url === selectedEndpoint);
+        console.log('🔍 Request details:', {
+          endpoint: selectedEndpoint,
+          endpointName: endpointConfig?.name || 'Unknown',
+          model: endpointConfig?.model || 'Unknown',
+          type: endpointConfig?.type || 'Unknown',
+          timeout: requestTimeout,
+          payloadSize: JSON.stringify(requestConfig.data).length,
+          messageCount: messages.length,
+          attemptedEndpoints: Array.from(attemptedEndpoints),
+          apiKeyPresent: !!apiKey,
+          apiKeyLength: apiKey ? apiKey.length : 0
+        });
+        
+        // Start timing the request for performance tracking
+        const requestStartTime = Date.now();
+
+        // Make the AI API call with formatted request
+        const response = await axios.post(
+          requestConfig.url,
+          requestConfig.data,
+          {
+            headers: requestConfig.headers,
+            timeout: requestTimeout,
+            // Remove validateStatus to get proper error responses
+            validateStatus: function (status) {
+              return status < 500; // Accept all status codes under 500
+            }
+          }
+        );
+
+        // Calculate response time and update endpoint stats for future load balancing decisions
+        const responseTime = Date.now() - requestStartTime;
+        updateEndpointStats(selectedEndpoint, true, responseTime);
+
+        console.log(`AI response received with status: ${response.status}, time: ${responseTime}ms`);
+        
+        // Parse response using endpoint-specific parser
+        const parsedResponse = parseResponseFromEndpoint(response, selectedEndpoint);
+        
+        // Handle successful response
+        if (response.status === 200) {
+          console.log(`✅ AI response successful: ${parsedResponse.content?.substring(0, 100)}...`);
+          
+          // Validate that we actually got content back
+          if (!parsedResponse.content || parsedResponse.content.trim().length === 0) {
+            console.error(`❌ Empty response content from ${selectedEndpoint}`);
+            throw new Error('Empty response content received from AI service');
+          }
+          
+          // Apply comprehensive response cleaning
+          let finalContent = cleanResponseContent(parsedResponse.content);
+          
+          // Additional safety check for artifacts
+          if (finalContent.includes('We need to') || 
+              finalContent.includes('CRITICAL IDENTITY') ||
+              finalContent.includes('<|') ||
+              finalContent.includes('The user') ||
+              finalContent.includes('So we respond')) {
+            console.log('🧹 Additional artifact cleaning required');
+            finalContent = finalContent
+              .split('\n')
+              .filter(line => {
+                const lower = line.toLowerCase();
+                return !lower.includes('we need to') && 
+                       !lower.includes('critical identity') &&
+                       !lower.includes('the user') &&
+                       !lower.includes('so we respond') &&
+                       !lower.includes('<|');
+              })
+              .join('\n')
+              .trim();
+          }
+          
+          // Ensure we have meaningful content after cleaning
+          if (!finalContent || finalContent.trim().length < 10) {
+            console.log('🔄 Content too short after cleaning, providing educational fallback');
+            if (body.attachments && body.attachments.length > 0) {
+              finalContent = "Hello! I'm BELTO AI, your educational assistant. I've processed your document and I'm ready to provide comprehensive analysis. Could you please ask me a specific question about the content so I can give you a detailed and helpful response?";
+            } else {
+              finalContent = "Hello! I'm BELTO AI, your educational assistant. I'm here to provide comprehensive support for your academic needs. How can I help you with your studies today?";
+            }
+          }
+          
+          // Apply post-processing rules if provided
+          if (body.preferences?.processingRules) {
+            console.log('🔧 Applying post-processing rules to response');
+            finalContent = applyPostprocessingRules(finalContent, body.preferences.processingRules);
+          }
+          
+          return NextResponse.json({
+            response: finalContent,
+            tokenUsage: parsedResponse.usage
+          });
+        } else {
+          // Log detailed error for non-200 responses
+          console.error(`❌ Non-200 response from ${selectedEndpoint}:`, {
+            status: response.status,
+            statusText: response.statusText,
+            data: response.data,
+            headers: response.headers
+          });
+          
+          // Non-200 but non-500 status codes should be treated as errors
+          throw new Error(`HTTP ${response.status}: ${response.data?.error?.message || response.statusText || 'Unknown error'}`);
+        }
+      } catch (error) {
+        lastError = error;
+        
+        // Update endpoint stats for failures if we know which endpoint failed
+        if (error.config?.url) {
+          updateEndpointStats(error.config.url, false, 0);
+          console.log(`Updated stats for ${error.config.url} to reflect failure`);
+        }
+
+        console.error(`❌ Attempt ${attempt} failed:`, {
+          message: error.message,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          code: error.code,
+          url: error.config?.url,
+          timeout: error.code === 'ECONNABORTED' ? requestTimeout : 'N/A'
+        });
+
+        // If this is not the last attempt, wait before retrying
+        if (attempt < maxRetries && attemptedEndpoints.size < endpoints.length) {
+          // ADAPTIVE: Longer wait for document/large requests
+          let waitTime;
+          if (hasAttachments) {
+            const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
+            if (docSize > 100000) {
+              waitTime = 5000;
+            } else if (docSize > 50000) {
+              waitTime = 3000;
+            } else {
+              waitTime = 2000;
+            }
+          } else if (totalContentLength < 200) {
+            waitTime = 300;
+          } else if (totalContentLength < 1000) {
+            waitTime = Math.min(attempt * 500, 1000);
+          } else {
+            waitTime = Math.min(attempt * 1000, 2000);
+          }
+          console.log(`Waiting ${waitTime}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
+    }
+
+    // If we get here, all retries failed
+    const error = lastError;
+    // Log detailed error information
+    console.error('AI API Error:', {
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data,
+      code: error.code,
+      url: error.config?.url,
+      requestBody: error.config?.data ? JSON.parse(error.config.data) : 'No request body'
+    });
+    // Provide more specific error messages based on the error type
+    let errorMessage = 'Failed to generate AI response';
+    let statusCode = 500;
+    let errorDetails = {
+      message: error.message,
+      code: error.code,
+      status: error.response?.status
+    };
+    // Enhanced error handling with endpoint diagnostics
+    if (error.code === 'ECONNREFUSED' || error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      console.error('Connection error details:', {
+        code: error.code,
+        endpoint: error.config?.url,
+        timeout: requestTimeout,
+        availableEndpoints: endpointStats.filter(e => e.isAvailable).length,
+        totalEndpoints: endpointStats.length
+      });
+      // If fallback is enabled and all endpoints failed, provide a helpful response
+      if (ENABLE_FALLBACK_RESPONSES) {
+        console.log('🔄 Triggering educational fallback response due to connection errors');
+        console.log('Fallback trigger details:', {
+          hasAttachments,
+          contentLength: body.attachments?.[0]?.content?.length || 0,
+          requestTimeout,
+          baseTimeout: BASE_TIMEOUT_MS,
+          attemptedEndpoints: Array.from(attemptedEndpoints),
+          endpointStats: endpointStats.map(e => ({ url: e.url, isAvailable: e.isAvailable, failCount: e.failCount }))
+        });
+        
+        if (hasAttachments && body.attachments[0].content) {
+          // For document requests, return educational fallback
+          return NextResponse.json({
+            response: `Hello! I'm BELTO AI, your educational assistant. I'm currently experiencing some connectivity issues while processing your document, but I'm here to help with your academic needs. 
+
+📄 **Your Document Upload**: I can see you've uploaded a document for analysis. While I work on restoring full connectivity, here are some ways I can assist you:
+
+• **Ask specific questions** about sections of your document
+• **Request summaries** of particular chapters or topics  
+• **Get explanations** of key concepts within the material
+• **Break down complex topics** into manageable parts
+
+💡 **Quick Tip**: Try asking something like "What are the main points in section 2?" or "Explain the key concepts in this document" for faster processing.
+
+I'm designed specifically to support your academic journey and educational activities. Please try your request again in a moment, or feel free to ask me about any specific part of your document!`,
+            tokenUsage: { total_tokens: 150, prompt_tokens: 50, completion_tokens: 100 },
+            fallback: true,
+            error: "Service temporarily slow or unavailable"
+          });
+        }
+        
+        // For simple messages, provide educational identity and help
+        let fallbackMessage = `Hello! I'm BELTO AI, your dedicated educational assistant designed to help students with their academic tasks and educational activities.
+
+🎓 **How I Can Help You**:
+• Answer questions about your coursework and studies
+• Explain complex academic concepts in simple terms  
+• Help with research and analysis
+• Provide study guidance and learning support
+• Assist with educational document review
+
+I'm currently experiencing some connectivity issues with my advanced processing systems, but I'm still here to support your learning journey!`;
+
+        if (requestTimeout > BASE_TIMEOUT_MS) {
+          fallbackMessage += `\n\n⏱️ **Current Status**: Processing complex requests is taking longer than usual. For faster responses, try asking simpler questions or breaking your request into smaller parts.`;
+        } else {
+          fallbackMessage += `\n\n🔧 **Current Status**: My services are temporarily limited due to connectivity issues. Please try again in a few moments, and I'll be ready to help with your educational needs!`;
+        }
+        
+        fallbackMessage += `\n\n💡 **Try asking me**: "Who are you?" or "How can you help me with my studies?" to learn more about my educational capabilities!`;
+        
+        return NextResponse.json({
+          response: fallbackMessage,
+          tokenUsage: { total_tokens: 120, prompt_tokens: 30, completion_tokens: 90 },
+          fallback: true,
+          error: "Service temporarily unavailable"
+        });
+      }
+      errorMessage = `Could not connect to AI service. The service might be down or unreachable. Tried ${endpointStats.length} endpoints.`;
+      statusCode = 503; // Service Unavailable
+    } else if (error.response?.status === 401) {
+      console.log('🔄 Triggering fallback response due to authentication error');
+      errorMessage = 'Authentication failed with the AI service. Please check API key configuration.';
+      statusCode = 500;
+    } else if (error.response?.status === 400) {
+      console.log('🔄 Triggering fallback response due to bad request error');
+      console.log('Bad request details:', {
+        responseData: error.response?.data,
+        requestPayload: aiRequestPayload
+      });
+      errorMessage = 'The AI service rejected the request. Check the request format.';
+      statusCode = 400;
+    } else if (error.response?.data?.error) {
+      console.log('🔄 Triggering fallback response due to AI service error');
+      errorMessage = `AI service error: ${error.response.data.error.message || 'Unknown error'}`;
+    }
+    return NextResponse.json(
+      { 
+        error: errorMessage, 
+        details: errorDetails,
+        timestamp: new Date().toISOString()
+      },
+      { status: statusCode }
+    );
+  } catch (error) {
+    // Enhanced error handler to catch all types of errors
+    console.error('❌ Unexpected error in AI proxy:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      type: typeof error
+    });
+    
+    // Check if this is a ReferenceError (undefined variable)
+    if (error instanceof ReferenceError) {
+      console.error('🚨 ReferenceError detected - this indicates a code bug:', error.message);
+    }
+    
+    return NextResponse.json(
+      { 
+        error: 'Unexpected server error', 
+        details: { 
+          message: error.message,
+          name: error.name,
+          type: error.constructor.name
+        },
+        timestamp: new Date().toISOString()
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function OPTIONS(request) {
+  return NextResponse.json({}, { status: 200 });
+}
+
+export async function GET(request) {
+  // Status endpoint for debugging
+  return NextResponse.json({
+    status: 'online',
+    endpoints: endpointStats.map(stat => ({
+      url: stat.url,
+      name: stat.name,
+      model: stat.model,
+      type: stat.type,
+      context: stat.context,
+      isAvailable: stat.isAvailable,
+      failCount: stat.failCount,
+      lastResponseTime: stat.lastResponseTime,
+      consecutiveFailures: stat.consecutiveFailures,
+      circuitBreakerOpen: stat.circuitBreakerOpen,
+      lastChecked: new Date(stat.lastChecked).toISOString()
+    })),
+    totalEndpoints: endpoints.length,
+    availableEndpoints: endpointStats.filter(e => e.isAvailable && !e.circuitBreakerOpen).length,
+    apiKeyConfigured: !!process.env.AI_API_KEY,
+    timestamp: new Date().toISOString()
+  });
+}
