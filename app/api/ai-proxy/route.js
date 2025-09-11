@@ -439,28 +439,18 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
   }
 
-  // Enhanced BELTO AI identity enforcement for all endpoints
-  const enhanceSystemMessage = (content) => {
-    return `${content}\n\nCRITICAL ENFORCEMENT: You are CODING GURU (BELTO AI). ONLY answer coding questions. For non-coding queries, respond: "Sorry, I can't answer this query as it is not related to coding". NEVER provide responses about history, politics, general knowledge, or any non-programming topics. Always format code with proper line breaks and indentation.`;
-  };
+  // Preserve system messages exactly as provided - no hard-coded modifications
+  // The system prompts should define the AI's behavior, not this function
 
   if (endpointConfig.type === 'chat') {
     // Chat completions format (only port 8001 - Llama 3.1 8B)
-    const enhancedMessages = messages.map(msg => {
-      if (msg.role === 'system') {
-        return {
-          ...msg,
-          content: enhanceSystemMessage(msg.content)
-        };
-      }
-      return msg;
-    });
+    // Use messages exactly as provided without modification
     
     return {
       url: endpoint,
       data: {
         model: 'local',
-        messages: enhancedMessages,
+        messages: messages, // Use original messages without modification
         max_tokens: 512, // Increased for complete responses
         temperature: 0.7,
         stop: ["User:", "System:", "DeepSeek:", "We need to", "The user", "So we", "Let's", "CRITICAL", "REMINDER:"]
@@ -473,7 +463,7 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
     // Completions format (all other ports)
     const prompt = messages.map(msg => {
       if (msg.role === 'system') {
-        return `System: ${enhanceSystemMessage(msg.content)}`;
+        return `System: ${msg.content}`; // Use original system content without modification
       }
       if (msg.role === 'user') return `User: ${msg.content}`;
       if (msg.role === 'assistant') return `BELTO AI: ${msg.content}`;
@@ -873,19 +863,10 @@ export async function POST(request) {
       console.log('🎓 Lecture system prompt preview:', body.preferences.systemPrompts[0].content.substring(0, 100) + '...');
       const lectureSystemPrompt = body.preferences.systemPrompts[0].content;
       
-      // Enhance the lecture-specific system prompt with BELTO AI identity enforcement
-      const enhancedLecturePrompt = `${lectureSystemPrompt}
-
-CRITICAL IDENTITY RULES FOR BELTO AI:
-- Your name is BELTO AI and ONLY BELTO AI
-- NEVER identify as DeepSeek, GPT, Claude, or any other AI system
-- When asked "who are you?" respond: "I am BELTO AI, your educational assistant"
-- ALWAYS respond in English only - never in Chinese, Korean, or any other language
-- Maintain the educational focus and rules specified above while following these identity guidelines`;
-
+      // Use the custom system prompt exactly as provided - no modifications
       messages.unshift({
         role: 'system',
-        content: enhancedLecturePrompt
+        content: lectureSystemPrompt
       });
       systemMessageAdded = true;
       console.log('✅ Applied lecture-specific system prompt with BELTO AI identity enforcement');
@@ -894,26 +875,18 @@ CRITICAL IDENTITY RULES FOR BELTO AI:
       console.log('📋 Using system prompt from aiConfig');
       const configSystemPrompt = body.aiConfig.systemPrompts[0].content;
       
-      // Enhance the config system prompt with BELTO AI identity enforcement
-      const enhancedConfigPrompt = `${configSystemPrompt}
-
-CRITICAL IDENTITY RULES FOR BELTO AI:
-- Your name is BELTO AI and ONLY BELTO AI
-- NEVER identify as DeepSeek, GPT, Claude, or any other AI system
-- When asked "who are you?" respond: "I am BELTO AI, your educational assistant"
-- ALWAYS respond in English only - never in Chinese, Korean, or any other language`;
-
+      // Use the config system prompt exactly as provided - no modifications
       messages.unshift({
         role: 'system',
-        content: enhancedConfigPrompt
+        content: configSystemPrompt
       });
       systemMessageAdded = true;
-      console.log('✅ Applied config system prompt with BELTO AI identity enforcement');
+      console.log('✅ Applied config system prompt exactly as provided');
     }
    
-    // FALLBACK: Add enhanced default system message only if no lecture-specific prompts are available
+    // FALLBACK: Add default system message only if no custom prompts are available anywhere
     if (!systemMessageAdded) {
-      console.log('⚠️  No lecture-specific AI preferences found - using default BELTO AI system message');
+      console.log('⚠️  No custom system prompts found - using default BELTO AI system message');
       console.log('📝 Creating default system message');
       let systemContent;
       
@@ -923,20 +896,9 @@ CRITICAL IDENTITY RULES FOR BELTO AI:
       
       console.log('System message metrics:', { hasAttachments, totalContentLength });
       
-      // DYNAMIC system messages based on provided system prompts or default educational behavior
-      let baseSystemPrompt;
-      
-      // Check if we have custom system prompts that define the AI's behavior
-      if (body.preferences?.systemPrompts?.[0]?.content) {
-        console.log('📋 Using custom system prompt from preferences');
-        baseSystemPrompt = body.preferences.systemPrompts[0].content;
-      } else if (body.aiConfig?.systemPrompts?.[0]?.content) {
-        console.log('📋 Using custom system prompt from aiConfig');
-        baseSystemPrompt = body.aiConfig.systemPrompts[0].content;
-      } else {
-        // Default educational system prompt when no custom prompts are provided
-        console.log('📋 Using default educational system prompt');
-        baseSystemPrompt = `You are BELTO AI, an intelligent educational assistant designed to help students learn and understand various topics.
+      // Default educational system prompt when no custom prompts are provided
+      console.log('📋 Using default educational system prompt');
+      const baseSystemPrompt = `You are BELTO AI, an intelligent educational assistant designed to help students learn and understand various topics.
 
 IDENTITY AND BEHAVIOR RULES:
 - Your name is BELTO AI
@@ -962,7 +924,6 @@ EDUCATIONAL FOCUS:
 - Adapt explanations to support different learning levels
 
 Your purpose is to be a comprehensive educational assistant that supports learning across various subjects.`;
-      }
 
       if (!hasAttachments && totalContentLength < 100) {
         // Brief but complete system message for simple requests
