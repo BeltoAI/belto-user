@@ -19,25 +19,40 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 
-// Custom renderer for code blocks
+// Custom renderer for code blocks with enhanced formatting
 const CodeBlock = ({ language, value }) => {
   return (
-    <div className="relative group">
-      <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+    <div className="relative group my-4">
+      <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
         <button
-          onClick={() => navigator.clipboard.writeText(value)}
-          className="bg-[#363636] hover:bg-[#464646] text-xs px-2 py-1 rounded"
+          onClick={() => {
+            navigator.clipboard.writeText(value);
+            // Optional: Add a toast notification here
+          }}
+          className="bg-[#363636] hover:bg-[#464646] text-xs px-3 py-1 rounded text-gray-200 font-medium"
+          title="Copy code"
         >
           Copy
         </button>
       </div>
       <SyntaxHighlighter
-        language={language || 'javascript'}
+        language={language || 'text'}
         style={atomDark}
         customStyle={{
-          margin: '1em 0',
-          borderRadius: '0.375rem',
-          backgroundColor: '#262626'
+          margin: '0',
+          borderRadius: '0.5rem',
+          backgroundColor: '#1a1a1a',
+          border: '1px solid #333',
+          fontSize: '14px',
+          lineHeight: '1.5'
+        }}
+        showLineNumbers={value.split('\n').length > 5}
+        wrapLines={true}
+        lineNumberStyle={{
+          minWidth: '2.5em',
+          paddingRight: '1em',
+          color: '#666',
+          backgroundColor: 'transparent'
         }}
       >
         {value}
@@ -191,36 +206,49 @@ const ChatMessage = ({
                 components={{
                   code({ node, inline, className, children, ...props }) {
                     const match = /language-(\w+)/.exec(className || '');
+                    const codeContent = String(children).replace(/\n$/, '');
+                    
                     return !inline && match ? (
                       <CodeBlock
                         language={match[1]}
-                        value={String(children).replace(/\n$/, '')}
+                        value={codeContent}
                         {...props}
                       />
                     ) : (
-                      <code className="bg-[#262626] px-1 py-0.5 rounded text-sm" {...props}>
+                      <code className="bg-[#262626] px-2 py-1 rounded text-sm font-mono text-[#FFB800]" {...props}>
                         {children}
                       </code>
                     );
                   },
-                  p: ({ children }) => <p className="text-sm text-gray-300 mb-2">{children}</p>,
-                  ul: ({ children }) => <ul className="list-disc list-inside mb-2">{children}</ul>,
-                  ol: ({ children }) => <ol className="list-decimal list-inside mb-2">{children}</ol>,
-                  li: ({ children }) => <li className="text-sm text-gray-300">{children}</li>,
+                  p: ({ children }) => <p className="text-sm text-gray-300 mb-3 leading-relaxed">{children}</p>,
+                  ul: ({ children }) => <ul className="list-disc list-inside mb-3 space-y-1">{children}</ul>,
+                  ol: ({ children }) => <ol className="list-decimal list-inside mb-3 space-y-1">{children}</ol>,
+                  li: ({ children }) => <li className="text-sm text-gray-300 ml-2">{children}</li>,
                   blockquote: ({ children }) => (
-                    <blockquote className="border-l-4 border-[#FFB800] pl-4 italic my-2">
+                    <blockquote className="border-l-4 border-[#FFB800] pl-4 italic my-3 bg-[#1a1a1a] py-2 rounded-r">
                       {children}
                     </blockquote>
                   ),
                   h1: ({ children }) => (
-                    <h1 className="text-xl font-bold text-[#FFB800] mb-2">{children}</h1>
+                    <h1 className="text-xl font-bold text-[#FFB800] mb-3 border-b border-[#333] pb-2">{children}</h1>
                   ),
                   h2: ({ children }) => (
-                    <h2 className="text-lg font-bold text-[#FFB800] mb-2">{children}</h2>
+                    <h2 className="text-lg font-bold text-[#FFB800] mb-3 border-b border-[#333] pb-1">{children}</h2>
                   ),
                   h3: ({ children }) => (
                     <h3 className="text-base font-bold text-[#FFB800] mb-2">{children}</h3>
                   ),
+                  strong: ({ children }) => (
+                    <strong className="font-bold text-white">{children}</strong>
+                  ),
+                  em: ({ children }) => (
+                    <em className="italic text-gray-200">{children}</em>
+                  ),
+                  pre: ({ children }) => (
+                    <div className="my-3">
+                      {children}
+                    </div>
+                  )
                 }}
               >
                 {message}

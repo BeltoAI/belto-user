@@ -5,6 +5,7 @@ import { toast } from 'react-toastify';
 import { useAIResponse } from './useAIResponse';
 import { useResponseQualityMonitor } from './useResponseQualityMonitor';
 import { useUser } from '@/contexts/UserContext';
+import { processAIResponse, enhanceCodeExamples } from '../utils/responseProcessor';
 
 // Update the function signature to accept lectureMaterials
 export const useChatHandlers = (
@@ -303,15 +304,32 @@ export const useChatHandlers = (
       // Handle AI response result
       let aiResponse, messageTokenUsage;
       if (aiResult.status === 'fulfilled') {
-        aiResponse = aiResult.value.response;
-        messageTokenUsage = aiResult.value.tokenUsage;
-        
-        // Monitor response quality
+        // Define quality context first for processing decisions
         const qualityContext = {
           hasDocument: attachmentsToSend.length > 0,
           isMathOrScience: /math|science|equation|formula|calculate|solve/i.test(text),
           isGreeting: /hello|hi|hey|greetings/i.test(text.toLowerCase())
         };
+        
+        // Process and enhance the AI response for better formatting
+        let rawResponse = aiResult.value.response;
+        
+        // Apply comprehensive response processing
+        aiResponse = processAIResponse(rawResponse);
+        
+        // If the response contains code, enhance it further
+        if (aiResponse.includes('```') || /\bcode\b|\bfunction\b|\bvariable\b|\balgorithm\b/i.test(text)) {
+          aiResponse = enhanceCodeExamples(aiResponse);
+        }
+        
+        messageTokenUsage = aiResult.value.tokenUsage;
+        
+        console.log('✨ Response processed and enhanced:', {
+          originalLength: rawResponse.length,
+          enhancedLength: aiResponse.length,
+          hasCodeBlocks: aiResponse.includes('```'),
+          responseType: qualityContext.isMathOrScience ? 'technical' : qualityContext.isGreeting ? 'greeting' : 'general'
+        });
         
         const qualityAnalysis = logQualityMetrics(aiResponse, qualityContext, currentSessionId);
         

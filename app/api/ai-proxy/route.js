@@ -588,33 +588,24 @@ function cleanResponseContent(content) {
     .replace(/\s+/g, ' ')
     .trim()
     
-    // Clean up code formatting - ensure proper line breaks in code blocks
-    .replace(/```(\w+)\s*([^`]+)```/g, (match, language, code) => {
+    // IMPROVED: Clean up code formatting - preserve original structure and ensure proper formatting
+    .replace(/```(\w*)\s*([^`]+?)```/g, (match, language, code) => {
+      // Preserve the original code structure and just clean up basic formatting issues
       let cleanCode = code
-        // Fix Python function formatting
-        .replace(/def\s+(\w+)\([^)]*\):\s*([^#\n]+)/g, (match, funcName, funcBody) => {
-          const formatted = funcBody
-            .replace(/;\s*/g, '\n    ')
-            .replace(/return\s+/g, '\n    return ')
-            .replace(/if\s+/g, '\n    if ')
-            .replace(/else:\s*/g, '\n    else:\n        ');
-          return `def ${funcName}(${match.match(/\([^)]*\)/)[0]}:\n    ${formatted}`;
-        })
-        // Fix Java/C++ style functions
-        .replace(/(\w+\s+\w+\([^)]*\)\s*{[^}]+})/g, (match) => {
-          return match
-            .replace(/{/g, '{\n    ')
-            .replace(/;(?!\s*})/g, ';\n    ')
-            .replace(/}/g, '\n}');
-        })
-        // Fix general statement separation
-        .replace(/;\s*(?=\w)/g, ';\n    ')
-        .replace(/{\s*(?=\w)/g, '{\n    ')
-        .replace(/}\s*(?=\w)/g, '}\n    ')
-        .replace(/\s+/g, ' ')
-        .trim();
+        .trim() // Remove leading/trailing whitespace
+        .replace(/\r\n/g, '\n') // Normalize line endings
+        .replace(/\t/g, '    ') // Convert tabs to spaces for consistency
+        .split('\n')
+        .map(line => line.trimEnd()) // Remove trailing spaces from each line
+        .join('\n');
       
-      return `\`\`\`${language}\n${cleanCode}\n\`\`\``;
+      // Only apply minimal formatting fixes that don't break the code structure
+      // Don't attempt to reformat the code logic - preserve original formatting
+      
+      // Ensure proper language specification
+      const detectedLanguage = language || 'text';
+      
+      return `\`\`\`${detectedLanguage}\n${cleanCode}\n\`\`\``;
     });
 
   // STEP 2: Split into sentences and filter out system reasoning while preserving educational content
@@ -927,6 +918,15 @@ RESPONSE RULES:
 - Do not cut responses short or leave explanations incomplete
 - For greetings like "hi" or "hello", respond warmly and ask how you can help
 - Always aim to fully address the user's question or request
+
+CODE FORMATTING RULES:
+- ALWAYS format code using proper markdown code blocks with language specification
+- Use \`\`\`python for Python code, \`\`\`javascript for JavaScript, etc.
+- Ensure proper indentation and line breaks within code blocks
+- Include comprehensive comments explaining the code
+- Provide both the code and detailed explanations of how it works
+- For code examples, include multiple approaches when helpful
+- Always test your code logic before providing it to students
 
 EDUCATIONAL FOCUS:
 - Prioritize learning outcomes and understanding
