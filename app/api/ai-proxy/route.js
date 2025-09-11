@@ -441,7 +441,7 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
 
   // Enhanced BELTO AI identity enforcement for all endpoints
   const enhanceSystemMessage = (content) => {
-    return `${content}\n\nREMINDER: You are BELTO AI (NOT DeepSeek, NOT any other AI). Never mention DeepSeek or identify as any other AI. Always respond in English only.`;
+    return `${content}\n\nCRITICAL ENFORCEMENT: You are CODING GURU (BELTO AI). ONLY answer coding questions. For non-coding queries, respond: "Sorry, I can't answer this query as it is not related to coding". NEVER provide responses about history, politics, general knowledge, or any non-programming topics. Always format code with proper line breaks and indentation.`;
   };
 
   if (endpointConfig.type === 'chat') {
@@ -540,6 +540,196 @@ function parseResponseFromEndpoint(response, endpoint) {
 }
 
 /**
+ * Detects if a query is coding-related or not
+ * @param {string} query - The user's query
+ * @returns {boolean} - True if coding-related, false otherwise
+ */
+function isCodingRelatedQuery(query) {
+  const lowerQuery = query.toLowerCase();
+  
+  // Strong non-coding indicators that should immediately reject the query
+  const strongNonCodingPatterns = [
+    /history of/i,
+    /what is the history/i,
+    /tell me about.*history/i,
+    /geography/i,
+    /politics/i,
+    /political/i,
+    /economics/i,
+    /economy/i,
+    /religion/i,
+    /philosophy/i,
+    /literature/i,
+    /creative writing/i,
+    /write a story/i,
+    /write a poem/i,
+    /personal advice/i,
+    /relationship/i,
+    /psychology/i,
+    /biology/i,
+    /chemistry/i,
+    /physics/i,
+    /mathematics/i,
+    /calculus/i,
+    /algebra/i,
+    /geometry/i,
+    /business/i,
+    /marketing/i,
+    /art/i,
+    /music/i,
+    /sports/i,
+    /entertainment/i,
+    /movies/i,
+    /books/i,
+    /cooking/i,
+    /recipes/i,
+    /travel/i,
+    /culture/i,
+    /current events/i,
+    /news/i,
+    /weather/i,
+    /health/i,
+    /medical/i,
+    /fitness/i
+  ];
+  
+  // Check for strong non-coding patterns first
+  if (strongNonCodingPatterns.some(pattern => pattern.test(query))) {
+    return false;
+  }
+  
+  // Coding keywords that indicate programming-related queries
+  const codingKeywords = [
+    'code', 'program', 'programming', 'function', 'variable', 'algorithm', 'debug', 'syntax',
+    'python', 'javascript', 'java', 'c++', 'html', 'css', 'sql', 'react', 'angular', 'vue',
+    'loop', 'array', 'object', 'class', 'method', 'api', 'database', 'recursion',
+    'framework', 'library', 'git', 'github', 'compile', 'execute', 'runtime',
+    'iteration', 'data structure', 'string', 'integer', 'boolean', 'float',
+    'if statement', 'for loop', 'while loop', 'switch case', 'conditional',
+    'inheritance', 'polymorphism', 'encapsulation', 'abstraction', 'oop',
+    'nodejs', 'php', 'ruby', 'swift', 'kotlin', 'golang', 'rust', 'scala',
+    'mongodb', 'mysql', 'postgresql', 'redis', 'docker', 'kubernetes',
+    'web development', 'mobile development', 'software development',
+    'backend', 'frontend', 'fullstack', 'devops', 'machine learning',
+    'artificial intelligence', 'data science', 'big data', 'cloud computing',
+    'microservices', 'rest api', 'graphql', 'json', 'xml', 'yaml',
+    'testing', 'unit test', 'integration test', 'bug', 'error', 'exception',
+    'package', 'module', 'import', 'export', 'namespace', 'scope',
+    'callback', 'promise', 'async', 'await', 'thread', 'process',
+    'binary', 'hexadecimal', 'bit', 'byte', 'memory', 'cpu', 'performance'
+  ];
+  
+  // Programming language indicators
+  const programmingLanguages = [
+    'python', 'javascript', 'java', 'c++', 'c#', 'php', 'ruby', 'swift',
+    'kotlin', 'golang', 'rust', 'scala', 'typescript', 'perl', 'bash',
+    'powershell', 'sql', 'html', 'css', 'scss', 'sass', 'less'
+  ];
+  
+  // Check for coding keywords
+  const hasCodingKeywords = codingKeywords.some(keyword => 
+    lowerQuery.includes(keyword)
+  );
+  
+  // Check for programming language mentions
+  const hasProgrammingLanguage = programmingLanguages.some(lang => 
+    lowerQuery.includes(lang)
+  );
+  
+  // Check for coding-specific patterns
+  const codingPatterns = [
+    /write.*code/i,
+    /create.*function/i,
+    /how to.*program/i,
+    /debug.*code/i,
+    /fix.*bug/i,
+    /optimize.*code/i,
+    /implement.*algorithm/i,
+    /develop.*application/i,
+    /build.*website/i,
+    /create.*api/i,
+    /design.*database/i,
+    /solve.*programming/i,
+    /coding.*problem/i,
+    /software.*solution/i,
+    /web.*development/i,
+    /mobile.*app/i,
+    /data.*structure/i,
+    /recursive.*function/i,
+    /sort.*algorithm/i,
+    /search.*algorithm/i
+  ];
+  
+  const hasCodingPatterns = codingPatterns.some(pattern => pattern.test(query));
+  
+  return hasCodingKeywords || hasProgrammingLanguage || hasCodingPatterns;
+}
+
+/**
+ * Detects code language from content for proper formatting
+ * @param {string} code - The code content to analyze
+ * @returns {string} - Detected language or 'text'
+ */
+function detectCodeLanguage(code) {
+  const lowerCode = code.toLowerCase().trim();
+  
+  // Python detection - strongest indicators first
+  if (lowerCode.includes('def ') || lowerCode.includes('import ') || 
+      lowerCode.includes('print(') || lowerCode.includes('range(') ||
+      lowerCode.includes('if __name__') || lowerCode.includes('elif ') ||
+      (lowerCode.includes('for ') && lowerCode.includes(' in ')) ||
+      lowerCode.includes('with open(') || lowerCode.includes('lambda ')) {
+    return 'python';
+  }
+  
+  // JavaScript detection
+  if (lowerCode.includes('function ') || lowerCode.includes('const ') ||
+      lowerCode.includes('let ') || lowerCode.includes('var ') ||
+      lowerCode.includes('console.log') || lowerCode.includes('=>') ||
+      lowerCode.includes('document.') || lowerCode.includes('window.')) {
+    return 'javascript';
+  }
+  
+  // Java detection
+  if (lowerCode.includes('public class') || lowerCode.includes('public static void') ||
+      lowerCode.includes('system.out.print') || lowerCode.includes('import java') ||
+      lowerCode.includes('private ') || lowerCode.includes('protected ')) {
+    return 'java';
+  }
+  
+  // C++ detection
+  if (lowerCode.includes('#include') || lowerCode.includes('std::') ||
+      lowerCode.includes('cout <<') || lowerCode.includes('int main(') ||
+      lowerCode.includes('using namespace')) {
+    return 'cpp';
+  }
+  
+  // HTML detection
+  if (lowerCode.includes('<html') || lowerCode.includes('<!doctype') ||
+      lowerCode.includes('<div') || lowerCode.includes('<body') ||
+      lowerCode.includes('<head>')) {
+    return 'html';
+  }
+  
+  // CSS detection
+  if (lowerCode.includes('{') && lowerCode.includes('}') &&
+      lowerCode.includes(':') && !lowerCode.includes('function') &&
+      (lowerCode.includes('color') || lowerCode.includes('font') || 
+       lowerCode.includes('margin') || lowerCode.includes('padding'))) {
+    return 'css';
+  }
+  
+  // SQL detection
+  if (lowerCode.includes('select ') || lowerCode.includes('from ') ||
+      lowerCode.includes('where ') || lowerCode.includes('insert into') ||
+      lowerCode.includes('create table') || lowerCode.includes('update ')) {
+    return 'sql';
+  }
+  
+  return 'text';
+}
+
+/**
  * Clean response content to remove unwanted patterns and ensure focused responses
  * @param {string} content - The AI response content
  * @returns {string} Cleaned content
@@ -588,24 +778,20 @@ function cleanResponseContent(content) {
     .replace(/\s+/g, ' ')
     .trim()
     
-    // IMPROVED: Clean up code formatting - preserve original structure and ensure proper formatting
+    // CRITICAL: Preserve code block structure completely - DO NOT modify code formatting
     .replace(/```(\w*)\s*([^`]+?)```/g, (match, language, code) => {
-      // Preserve the original code structure and just clean up basic formatting issues
-      let cleanCode = code
-        .trim() // Remove leading/trailing whitespace
-        .replace(/\r\n/g, '\n') // Normalize line endings
-        .replace(/\t/g, '    ') // Convert tabs to spaces for consistency
-        .split('\n')
-        .map(line => line.trimEnd()) // Remove trailing spaces from each line
-        .join('\n');
+      // PRESERVE ORIGINAL FORMATTING - This is critical for indentation-sensitive languages like Python
+      let preservedCode = code
+        .replace(/\r\n/g, '\n') // Only normalize line endings
+        .replace(/\t/g, '    '); // Convert tabs to spaces for consistency
       
-      // Only apply minimal formatting fixes that don't break the code structure
-      // Don't attempt to reformat the code logic - preserve original formatting
+      // DO NOT trim lines or modify indentation - preserve exactly as written by AI
+      // DO NOT join/split lines - this destroys Python indentation
       
-      // Ensure proper language specification
-      const detectedLanguage = language || 'text';
+      // Only ensure proper language specification
+      const detectedLanguage = language || detectCodeLanguage(preservedCode) || 'text';
       
-      return `\`\`\`${detectedLanguage}\n${cleanCode}\n\`\`\``;
+      return `\`\`\`${detectedLanguage}\n${preservedCode}\n\`\`\``;
     });
 
   // STEP 2: Split into sentences and filter out system reasoning while preserving educational content
@@ -732,6 +918,16 @@ export async function POST(request) {
    
     // Add the current prompt/message if it's not already in the history
     if (body.prompt) {
+      // CRITICAL: Check if the query is coding-related before processing
+      const userQuery = body.prompt.toLowerCase();
+      if (!isCodingRelatedQuery(userQuery)) {
+        console.log('🚫 Non-coding query detected, returning coding-only message');
+        return NextResponse.json({
+          response: "Sorry, I can't answer this query as it is not related to coding.",
+          tokenUsage: { total_tokens: 15, prompt_tokens: 10, completion_tokens: 5 }
+        });
+      }
+
       // For prompts with attachments, create optimized content
       let messageContent = body.prompt;
       
@@ -755,6 +951,16 @@ export async function POST(request) {
         messages.push(newUserMessage);
       }
     } else if (body.message) {
+      // CRITICAL: Check if the query is coding-related before processing
+      const userQuery = body.message.toLowerCase();
+      if (!isCodingRelatedQuery(userQuery)) {
+        console.log('🚫 Non-coding query detected, returning coding-only message');
+        return NextResponse.json({
+          response: "Sorry, I can't answer this query as it is not related to coding.",
+          tokenUsage: { total_tokens: 15, prompt_tokens: 10, completion_tokens: 5 }
+        });
+      }
+
       const newUserMessage = { role: 'user', content: body.message };
       const isDuplicate = messages.some(existingMsg =>
         existingMsg.role === 'user' &&
@@ -901,41 +1107,47 @@ CRITICAL IDENTITY RULES FOR BELTO AI:
       console.log('System message metrics:', { hasAttachments, totalContentLength });
       
       // COMPREHENSIVE system messages for accurate responses
-      const baseSystemPrompt = `You are BELTO AI, an educational assistant designed to help students with academic tasks. Your responses should be comprehensive, complete, and focused on providing thorough educational support.
+      const baseSystemPrompt = `You are a CODING GURU (BELTO AI). You ONLY answer coding-related questions and tasks.
 
-IDENTITY:
-- Your name is BELTO AI
-- You are an educational assistant for students
-- When asked "who are you?" respond: "I am BELTO AI, your educational assistant designed to help students with academic tasks and educational activities"
-- Always respond in English only
+STRICT IDENTITY AND BEHAVIOR RULES:
+- Your name is CODING GURU (BELTO AI)
+- When asked "who are you?" respond: "I am CODING GURU (BELTO AI), your dedicated programming assistant"
+- You ONLY help with coding, programming, software development, algorithms, and technical programming topics
+- You answer ALL types of coding questions from easy to complex
+- For ANY non-coding questions, you MUST respond: "Sorry, I can't answer this query as it is not related to coding"
 
-RESPONSE RULES:
-- Provide COMPLETE and THOROUGH responses to all questions
-- Give comprehensive explanations with examples when helpful
-- Include step-by-step solutions for complex problems
-- Offer additional context and related information when relevant
-- Be detailed and educational in your responses
-- Do not cut responses short or leave explanations incomplete
-- For greetings like "hi" or "hello", respond warmly and ask how you can help
-- Always aim to fully address the user's question or request
-
-CODE FORMATTING RULES:
+CODING RESPONSE RULES:
 - ALWAYS format code using proper markdown code blocks with language specification
 - Use \`\`\`python for Python code, \`\`\`javascript for JavaScript, etc.
-- Ensure proper indentation and line breaks within code blocks
+- Ensure proper indentation and line breaks within code blocks - NEVER format code as single lines
 - Include comprehensive comments explaining the code
 - Provide both the code and detailed explanations of how it works
 - For code examples, include multiple approaches when helpful
-- Always test your code logic before providing it to students
+- Always preserve proper indentation especially for Python where it's critical
 
-EDUCATIONAL FOCUS:
-- Prioritize learning outcomes and understanding
-- Provide detailed explanations that help students learn
-- Include relevant examples and applications
-- Offer study tips and learning strategies when appropriate
-- Connect concepts to broader academic contexts
+WHAT YOU HELP WITH (CODING ONLY):
+- Programming languages (Python, JavaScript, Java, C++, etc.)
+- Algorithms and data structures
+- Code debugging and optimization
+- Software development concepts
+- Database queries (SQL)
+- Web development (HTML, CSS, JavaScript)
+- Mobile app development
+- Code review and best practices
+- Programming tutorials and explanations
 
-Your purpose is to provide complete, comprehensive educational support to students.`;
+WHAT YOU DON'T HELP WITH (NON-CODING):
+- History, geography, politics, current events
+- Math problems not related to programming
+- General knowledge questions
+- Creative writing or literature
+- Science topics not related to programming
+- Personal advice or opinions
+- Any topic outside of programming and software development
+
+CRITICAL: If a question is not about coding/programming, respond with: "Sorry, I can't answer this query as it is not related to coding"
+
+Your purpose is to be the best coding assistant and programming mentor.`;
 
       if (!hasAttachments && totalContentLength < 100) {
         // Brief but complete system message for simple requests
