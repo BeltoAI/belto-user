@@ -544,127 +544,6 @@ function parseResponseFromEndpoint(response, endpoint) {
  * @param {string} query - The user's query
  * @returns {boolean} - True if coding-related, false otherwise
  */
-function isCodingRelatedQuery(query) {
-  const lowerQuery = query.toLowerCase();
-  
-  // Strong non-coding indicators that should immediately reject the query
-  const strongNonCodingPatterns = [
-    /history of/i,
-    /what is the history/i,
-    /tell me about.*history/i,
-    /geography/i,
-    /politics/i,
-    /political/i,
-    /economics/i,
-    /economy/i,
-    /religion/i,
-    /philosophy/i,
-    /literature/i,
-    /creative writing/i,
-    /write a story/i,
-    /write a poem/i,
-    /personal advice/i,
-    /relationship/i,
-    /psychology/i,
-    /biology/i,
-    /chemistry/i,
-    /physics/i,
-    /mathematics/i,
-    /calculus/i,
-    /algebra/i,
-    /geometry/i,
-    /business/i,
-    /marketing/i,
-    /art/i,
-    /music/i,
-    /sports/i,
-    /entertainment/i,
-    /movies/i,
-    /books/i,
-    /cooking/i,
-    /recipes/i,
-    /travel/i,
-    /culture/i,
-    /current events/i,
-    /news/i,
-    /weather/i,
-    /health/i,
-    /medical/i,
-    /fitness/i
-  ];
-  
-  // Check for strong non-coding patterns first
-  if (strongNonCodingPatterns.some(pattern => pattern.test(query))) {
-    return false;
-  }
-  
-  // Coding keywords that indicate programming-related queries
-  const codingKeywords = [
-    'code', 'program', 'programming', 'function', 'variable', 'algorithm', 'debug', 'syntax',
-    'python', 'javascript', 'java', 'c++', 'html', 'css', 'sql', 'react', 'angular', 'vue',
-    'loop', 'array', 'object', 'class', 'method', 'api', 'database', 'recursion',
-    'framework', 'library', 'git', 'github', 'compile', 'execute', 'runtime',
-    'iteration', 'data structure', 'string', 'integer', 'boolean', 'float',
-    'if statement', 'for loop', 'while loop', 'switch case', 'conditional',
-    'inheritance', 'polymorphism', 'encapsulation', 'abstraction', 'oop',
-    'nodejs', 'php', 'ruby', 'swift', 'kotlin', 'golang', 'rust', 'scala',
-    'mongodb', 'mysql', 'postgresql', 'redis', 'docker', 'kubernetes',
-    'web development', 'mobile development', 'software development',
-    'backend', 'frontend', 'fullstack', 'devops', 'machine learning',
-    'artificial intelligence', 'data science', 'big data', 'cloud computing',
-    'microservices', 'rest api', 'graphql', 'json', 'xml', 'yaml',
-    'testing', 'unit test', 'integration test', 'bug', 'error', 'exception',
-    'package', 'module', 'import', 'export', 'namespace', 'scope',
-    'callback', 'promise', 'async', 'await', 'thread', 'process',
-    'binary', 'hexadecimal', 'bit', 'byte', 'memory', 'cpu', 'performance'
-  ];
-  
-  // Programming language indicators
-  const programmingLanguages = [
-    'python', 'javascript', 'java', 'c++', 'c#', 'php', 'ruby', 'swift',
-    'kotlin', 'golang', 'rust', 'scala', 'typescript', 'perl', 'bash',
-    'powershell', 'sql', 'html', 'css', 'scss', 'sass', 'less'
-  ];
-  
-  // Check for coding keywords
-  const hasCodingKeywords = codingKeywords.some(keyword => 
-    lowerQuery.includes(keyword)
-  );
-  
-  // Check for programming language mentions
-  const hasProgrammingLanguage = programmingLanguages.some(lang => 
-    lowerQuery.includes(lang)
-  );
-  
-  // Check for coding-specific patterns
-  const codingPatterns = [
-    /write.*code/i,
-    /create.*function/i,
-    /how to.*program/i,
-    /debug.*code/i,
-    /fix.*bug/i,
-    /optimize.*code/i,
-    /implement.*algorithm/i,
-    /develop.*application/i,
-    /build.*website/i,
-    /create.*api/i,
-    /design.*database/i,
-    /solve.*programming/i,
-    /coding.*problem/i,
-    /software.*solution/i,
-    /web.*development/i,
-    /mobile.*app/i,
-    /data.*structure/i,
-    /recursive.*function/i,
-    /sort.*algorithm/i,
-    /search.*algorithm/i
-  ];
-  
-  const hasCodingPatterns = codingPatterns.some(pattern => pattern.test(query));
-  
-  return hasCodingKeywords || hasProgrammingLanguage || hasCodingPatterns;
-}
-
 /**
  * Detects code language from content for proper formatting
  * @param {string} code - The code content to analyze
@@ -739,113 +618,71 @@ function cleanResponseContent(content) {
     return '';
   }
 
-  // STEP 1: Remove system reasoning artifacts and internal commentary
-  let cleanedContent = content
-    // First, extract the actual response content that comes after reasoning
+  // STEP 1: PRESERVE ALL CODE BLOCKS FIRST - Extract and store them safely
+  const codeBlocks = [];
+  const codeBlockPlaceholders = {};
+  let codeBlockIndex = 0;
+
+  // Extract code blocks and replace with placeholders
+  let processedContent = content.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, language, code) => {
+    const placeholder = `__CODE_BLOCK_${codeBlockIndex}__`;
+    codeBlocks[codeBlockIndex] = {
+      language: language || 'text',
+      code: code.trim(), // Only trim leading/trailing whitespace, preserve internal formatting
+      original: match
+    };
+    codeBlockPlaceholders[placeholder] = codeBlockIndex;
+    codeBlockIndex++;
+    return placeholder;
+  });
+
+  // STEP 2: Clean only the non-code content
+  let cleanedContent = processedContent
+    // Remove system reasoning artifacts and internal commentary
     .replace(/.*?(?:respond with|say|produce):\s*/gi, '')
-    
-    // Remove system reasoning patterns at the beginning
     .replace(/^(?:We need to|The user|So we|Let's|We must)[^.]*[.:]?\s*/gi, '')
-    
-    // Remove critical identity rules exposure
     .replace(/CRITICAL IDENTITY RULES[^:]*:[^}]*}/gis, '')
     .replace(/CRITICAL IDENTITY RULES FOR BELTO AI[^:]*:[^}]*}/gis, '')
     .replace(/REMINDER:[^}]*}/gis, '')
-    
-    // Remove formatting artifacts
     .replace(/<\|end\|><\|start\|>assistant<\|channel\|>final<\|message\|>/gi, '')
     .replace(/<\|[^|]*\|>/g, '')
     .replace(/\|start\||\|end\|/gi, '')
-    
-    // Remove any mentions of being DeepSeek or other AI systems
     .replace(/I am DeepSeek[^.]*\./gi, '')
     .replace(/As DeepSeek[^,]*,?/gi, '')
     .replace(/I'm DeepSeek[^.]*\./gi, '')
     .replace(/DeepSeek[^.]*\./gi, '')
-    
-    // Remove meta-commentary about response generation
     .replace(/That is (fine|good|correct)[^.]*\./gi, '')
     .replace(/Now[,\s]*(everything is working fine|let's produce|we can)[^.]*\./gi, '')
     .replace(/The guidelines say[^.]*\./gi, '')
     .replace(/According to[^.]*guidelines[^.]*\./gi, '')
-    
-    // Remove unnecessary system-like introductions
     .replace(/^(Sure,?\s*|Of course,?\s*|Certainly,?\s*|Absolutely,?\s*)+/gi, '')
     .replace(/As requested[^,]*,?\s*/gi, '')
     .replace(/As instructed[^,]*,?\s*/gi, '')
-    
-    // Clean up spacing
     .replace(/\s+/g, ' ')
-    .trim()
-    
-    // CRITICAL: Preserve code block structure completely - DO NOT modify code formatting
-    .replace(/```(\w*)\s*([^`]+?)```/g, (match, language, code) => {
-      // PRESERVE ORIGINAL FORMATTING - This is critical for indentation-sensitive languages like Python
-      let preservedCode = code
-        .replace(/\r\n/g, '\n') // Only normalize line endings
-        .replace(/\t/g, '    '); // Convert tabs to spaces for consistency
-      
-      // DO NOT trim lines or modify indentation - preserve exactly as written by AI
-      // DO NOT join/split lines - this destroys Python indentation
-      
-      // Only ensure proper language specification
-      const detectedLanguage = language || detectCodeLanguage(preservedCode) || 'text';
-      
-      return `\`\`\`${detectedLanguage}\n${preservedCode}\n\`\`\``;
-    });
+    .trim();
 
-  // STEP 2: Split into sentences and filter out system reasoning while preserving educational content
-  const sentences = cleanedContent.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 0);
-  const cleanSentences = sentences.filter(sentence => {
-    const lower = sentence.toLowerCase();
+  // STEP 3: Restore code blocks with proper formatting
+  Object.keys(codeBlockPlaceholders).forEach(placeholder => {
+    const blockIndex = codeBlockPlaceholders[placeholder];
+    const block = codeBlocks[blockIndex];
     
-    // Filter out system reasoning patterns but preserve educational explanations
-    if (lower.includes('we need to') || 
-        lower.includes('the user') || 
-        lower.includes('so we respond') ||
-        lower.includes('let\'s say') ||
-        lower.includes('we must') ||
-        lower.includes('the conversation') ||
-        lower.includes('critical identity') ||
-        lower.includes('guidelines say') ||
-        lower.includes('that is fine') ||
-        lower.includes('now everything')) {
-      return false;
+    if (block) {
+      // Detect language if not specified
+      const language = block.language || detectCodeLanguage(block.code) || 'text';
+      
+      // Restore the code block with original formatting preserved
+      const restoredBlock = `\`\`\`${language}\n${block.code}\n\`\`\``;
+      cleanedContent = cleanedContent.replace(placeholder, restoredBlock);
     }
-    
-    // Keep actual educational responses and explanations
-    return true;
   });
 
-  // STEP 3: Reconstruct clean content
-  if (cleanSentences.length > 0) {
-    cleanedContent = cleanSentences.join(' ').replace(/\s+/g, ' ');
-  }
-
-  // STEP 4: Final cleanup
+  // STEP 4: Final cleanup without affecting code blocks
   cleanedContent = cleanedContent
-    // Clean up multiple newlines and extra whitespace
     .replace(/\n{3,}/g, '\n\n')
     .replace(/\s{3,}/g, ' ')
     .replace(/\.\s*\./g, '.')
     .replace(/\s+([.!?])/g, '$1')
     .trim();
-
-  // STEP 5: Ensure the response starts appropriately for BELTO AI
-  if (cleanedContent.length > 0 && !cleanedContent.match(/^(Hello|Hi|I am BELTO|I'm BELTO)/i)) {
-    // For greeting responses, make sure they're properly formatted
-    if (cleanedContent.toLowerCase().includes('hello') || cleanedContent.toLowerCase().includes('how can i help')) {
-      // This is already a proper greeting, keep as is
-    } else if (cleanedContent.length < 50 && cleanedContent.includes('!')) {
-      // Short exclamatory responses are likely proper greetings
-    } else {
-      // For other responses, ensure they don't start with system artifacts
-      const firstChar = cleanedContent.charAt(0);
-      if (firstChar !== firstChar.toUpperCase()) {
-        cleanedContent = firstChar.toUpperCase() + cleanedContent.slice(1);
-      }
-    }
-  }
 
   return cleanedContent;
 }
@@ -918,16 +755,6 @@ export async function POST(request) {
    
     // Add the current prompt/message if it's not already in the history
     if (body.prompt) {
-      // CRITICAL: Check if the query is coding-related before processing
-      const userQuery = body.prompt.toLowerCase();
-      if (!isCodingRelatedQuery(userQuery)) {
-        console.log('🚫 Non-coding query detected, returning coding-only message');
-        return NextResponse.json({
-          response: "Sorry, I can't answer this query as it is not related to coding.",
-          tokenUsage: { total_tokens: 15, prompt_tokens: 10, completion_tokens: 5 }
-        });
-      }
-
       // For prompts with attachments, create optimized content
       let messageContent = body.prompt;
       
@@ -951,16 +778,6 @@ export async function POST(request) {
         messages.push(newUserMessage);
       }
     } else if (body.message) {
-      // CRITICAL: Check if the query is coding-related before processing
-      const userQuery = body.message.toLowerCase();
-      if (!isCodingRelatedQuery(userQuery)) {
-        console.log('🚫 Non-coding query detected, returning coding-only message');
-        return NextResponse.json({
-          response: "Sorry, I can't answer this query as it is not related to coding.",
-          tokenUsage: { total_tokens: 15, prompt_tokens: 10, completion_tokens: 5 }
-        });
-      }
-
       const newUserMessage = { role: 'user', content: body.message };
       const isDuplicate = messages.some(existingMsg =>
         existingMsg.role === 'user' &&
@@ -1106,55 +923,53 @@ CRITICAL IDENTITY RULES FOR BELTO AI:
       
       console.log('System message metrics:', { hasAttachments, totalContentLength });
       
-      // COMPREHENSIVE system messages for accurate responses
-      const baseSystemPrompt = `You are a CODING GURU (BELTO AI). You ONLY answer coding-related questions and tasks.
+      // DYNAMIC system messages based on provided system prompts or default educational behavior
+      let baseSystemPrompt;
+      
+      // Check if we have custom system prompts that define the AI's behavior
+      if (body.preferences?.systemPrompts?.[0]?.content) {
+        console.log('📋 Using custom system prompt from preferences');
+        baseSystemPrompt = body.preferences.systemPrompts[0].content;
+      } else if (body.aiConfig?.systemPrompts?.[0]?.content) {
+        console.log('📋 Using custom system prompt from aiConfig');
+        baseSystemPrompt = body.aiConfig.systemPrompts[0].content;
+      } else {
+        // Default educational system prompt when no custom prompts are provided
+        console.log('📋 Using default educational system prompt');
+        baseSystemPrompt = `You are BELTO AI, an intelligent educational assistant designed to help students learn and understand various topics.
 
-STRICT IDENTITY AND BEHAVIOR RULES:
-- Your name is CODING GURU (BELTO AI)
-- When asked "who are you?" respond: "I am CODING GURU (BELTO AI), your dedicated programming assistant"
-- You ONLY help with coding, programming, software development, algorithms, and technical programming topics
-- You answer ALL types of coding questions from easy to complex
-- For ANY non-coding questions, you MUST respond: "Sorry, I can't answer this query as it is not related to coding"
+IDENTITY AND BEHAVIOR RULES:
+- Your name is BELTO AI
+- When asked "who are you?" respond: "I am BELTO AI, your educational assistant"
+- ALWAYS respond in English only - never in Chinese, Korean, or any other language
+- Provide helpful, accurate, and educational responses across various subjects
+- Maintain a friendly, supportive, and professional tone
+- Focus on helping users learn and understand concepts clearly
 
-CODING RESPONSE RULES:
+RESPONSE FORMATTING RULES:
 - ALWAYS format code using proper markdown code blocks with language specification
 - Use \`\`\`python for Python code, \`\`\`javascript for JavaScript, etc.
 - Ensure proper indentation and line breaks within code blocks - NEVER format code as single lines
-- Include comprehensive comments explaining the code
-- Provide both the code and detailed explanations of how it works
-- For code examples, include multiple approaches when helpful
-- Always preserve proper indentation especially for Python where it's critical
+- Include comprehensive comments explaining code when applicable
+- Provide clear explanations that support learning and understanding
+- For complex topics, break down explanations into understandable steps
 
-WHAT YOU HELP WITH (CODING ONLY):
-- Programming languages (Python, JavaScript, Java, C++, etc.)
-- Algorithms and data structures
-- Code debugging and optimization
-- Software development concepts
-- Database queries (SQL)
-- Web development (HTML, CSS, JavaScript)
-- Mobile app development
-- Code review and best practices
-- Programming tutorials and explanations
+EDUCATIONAL FOCUS:
+- Help with academic subjects including programming, mathematics, sciences, and more
+- Provide detailed explanations with examples when helpful
+- Support learning through clear, structured responses
+- Encourage understanding rather than just providing answers
+- Adapt explanations to support different learning levels
 
-WHAT YOU DON'T HELP WITH (NON-CODING):
-- History, geography, politics, current events
-- Math problems not related to programming
-- General knowledge questions
-- Creative writing or literature
-- Science topics not related to programming
-- Personal advice or opinions
-- Any topic outside of programming and software development
-
-CRITICAL: If a question is not about coding/programming, respond with: "Sorry, I can't answer this query as it is not related to coding"
-
-Your purpose is to be the best coding assistant and programming mentor.`;
+Your purpose is to be a comprehensive educational assistant that supports learning across various subjects.`;
+      }
 
       if (!hasAttachments && totalContentLength < 100) {
         // Brief but complete system message for simple requests
-        systemContent = `${baseSystemPrompt}\n\nRespond as BELTO AI with friendly, concise educational support.`;
+        systemContent = `${baseSystemPrompt}\n\nRespond as BELTO AI with friendly, concise support.`;
       } else if (!hasAttachments && totalContentLength < 200) {
         // Standard system message for simple requests
-        systemContent = `${baseSystemPrompt}\n\nProvide helpful educational responses as BELTO AI to support student learning.`;
+        systemContent = `${baseSystemPrompt}\n\nProvide helpful responses as BELTO AI to support user understanding.`;
       } else if (body.attachments && body.attachments.length > 0) {
         // Enhanced system message for document processing
         const documentTypes = body.attachments.map(att => att.name?.split('.').pop() || 'document').join(', ');
@@ -1162,21 +977,21 @@ Your purpose is to be the best coding assistant and programming mentor.`;
         
         systemContent = `${baseSystemPrompt}
 
-As BELTO AI, you are processing ${documentTypes} file(s) for educational purposes. Provide a ${processingType === 'summary' ? 'comprehensive and detailed summary' : 'thorough and complete analysis'} focused on:
-- Comprehensive educational insights and learning objectives
-- All important academic concepts and details with explanations
+As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processingType === 'summary' ? 'comprehensive and detailed summary' : 'thorough and complete analysis'} focused on:
+- Comprehensive insights and learning objectives
+- All important concepts and details with explanations
 - Complete analysis that covers all relevant aspects
-- Clear, detailed explanations that support deep learning
-- Actionable information for comprehensive student understanding
+- Clear, detailed explanations that support deep understanding
+- Actionable information for comprehensive user understanding
 - Step-by-step breakdowns when applicable
 - Related concepts and connections to broader topics`;
         
         if (body.processingHints?.documentType === 'pdf') {
-          systemContent += '\n- Detailed attention to document structure, headings, and all key sections for comprehensive academic organization';
+          systemContent += '\n- Detailed attention to document structure, headings, and all key sections for comprehensive organization';
         }
       } else {
         // Standard system message for normal requests
-        systemContent = `${baseSystemPrompt}\n\nAs BELTO AI, provide educational support using conversation history for context.`;
+        systemContent = `${baseSystemPrompt}\n\nAs BELTO AI, provide helpful support using conversation history for context.`;
       }
       
       messages.unshift({
