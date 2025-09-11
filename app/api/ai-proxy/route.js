@@ -869,8 +869,8 @@ export async function POST(request) {
         content: lectureSystemPrompt
       });
       systemMessageAdded = true;
-      console.log('✅ Applied lecture-specific system prompt with BELTO AI identity enforcement');
-      console.log('📏 Enhanced system prompt length:', enhancedLecturePrompt.length, 'characters');
+      console.log('✅ Applied lecture-specific system prompt exactly as provided');
+      console.log('📏 System prompt length:', lectureSystemPrompt.length, 'characters');
     } else if (body.aiConfig?.systemPrompts && body.aiConfig.systemPrompts.length > 0) {
       console.log('📋 Using system prompt from aiConfig');
       const configSystemPrompt = body.aiConfig.systemPrompts[0].content;

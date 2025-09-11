@@ -1,12 +1,12 @@
 /**
- * Simple test to check AI proxy endpoint and identify server errors
+ * Test script to check AI proxy endpoint directly on the deployed version
  */
 
-const testAIProxy = async () => {
+const testDeployedAIProxy = async () => {
   try {
-    console.log('🧪 Testing AI Proxy with simple request...');
+    console.log('🧪 Testing Deployed AI Proxy...');
     
-    const response = await fetch('http://localhost:3000/api/ai-proxy', {
+    const response = await fetch('https://belto-user-side.vercel.app/api/ai-proxy', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -20,7 +20,8 @@ const testAIProxy = async () => {
     console.log('Response headers:', [...response.headers.entries()]);
     
     const responseText = await response.text();
-    console.log('Response body:', responseText);
+    console.log('Response body length:', responseText.length);
+    console.log('Response body preview:', responseText.substring(0, 500));
     
     if (!response.ok) {
       console.error('❌ Request failed with status:', response.status);
@@ -28,7 +29,7 @@ const testAIProxy = async () => {
         const errorData = JSON.parse(responseText);
         console.error('Error details:', errorData);
       } catch (e) {
-        console.error('Raw error response:', responseText);
+        console.error('Raw error response (first 1000 chars):', responseText.substring(0, 1000));
       }
     } else {
       console.log('✅ Request successful');
@@ -36,7 +37,7 @@ const testAIProxy = async () => {
         const data = JSON.parse(responseText);
         console.log('Response data:', data);
       } catch (e) {
-        console.log('Response is not JSON:', responseText);
+        console.log('Response is not JSON - likely HTML redirect');
       }
     }
     
@@ -46,4 +47,4 @@ const testAIProxy = async () => {
 };
 
 // Run the test
-testAIProxy();
+testDeployedAIProxy();
