@@ -224,9 +224,15 @@ const Sidebar = () => {
     const lectureSession = lectureSessions[lectureId];
     if (!lectureSession?.session?._id) {
       console.error('No valid session found for lecture:', lectureId, lectureSession);
-      toast.error('Creating new session for this lecture...');
+      toast.info('Creating new session for this lecture...');
       
       try {
+        // Show loading state for this lecture
+        setLectureSessions(prev => ({
+          ...prev,
+          [lectureId]: { ...prev[lectureId], loading: true }
+        }));
+
         // Create a new session if one doesn't exist
         const lectureTitle = lectureDetails[lectureId]?.title || 
                             lectureDetails[String(lectureId)]?.title || 
@@ -251,6 +257,11 @@ const Sidebar = () => {
       } catch (error) {
         console.error('Failed to create new session:', error);
         toast.error('Failed to create session for this lecture');
+        // Reset loading state on error
+        setLectureSessions(prev => ({
+          ...prev,
+          [lectureId]: { ...prev[lectureId], loading: false }
+        }));
         return;
       }
     }
@@ -264,19 +275,21 @@ const Sidebar = () => {
         [lectureId]: { ...prev[lectureId], loading: true }
       }));
 
-      // Load the session using the store action
-      await loadSession(lectureSession.session._id);
-      
-      // Get lecture title for confirmation
+      // Show switching feedback
       const lectureTitle = lectureDetails[lectureId]?.title || 
                           lectureDetails[String(lectureId)]?.title || 
                           `Lecture ${lectureId}`;
+      
+      toast.info(`Switching to ${lectureTitle}...`);
+
+      // Load the session using the store action
+      await loadSession(lectureSession.session._id);
       
       setIsOpen(false); // Close sidebar on selection
       toast.success(`Switched to ${lectureTitle}`);
     } catch (err) {
       console.error('Failed to load session:', err);
-      toast.error('Failed to load chat session');
+      toast.error('Failed to switch to lecture session');
     } finally {
       // Ensure loading state is reset even if there's an error
       setLectureSessions(prev => ({
@@ -434,19 +447,27 @@ const Sidebar = () => {
                                     <button
                                       onClick={() => handleSelectLecture(lecture)}
                                       disabled={sessionsLoading || !sessionInfo?.session}
-                                      className={`w-full text-left p-2 text-sm bg-[#333333] border border-[#444444] rounded-md transition-colors
+                                      className={`w-full text-left p-2 text-sm bg-[#333333] border border-[#444444] rounded-md transition-colors relative
                                         ${currentSessionId === sessionInfo?.session?._id
-                                          ? "text-[#FFD700] border-[#FFD700]" // Highlight active session
+                                          ? "text-[#FFD700] border-[#FFD700] bg-[#444444]" // Highlight active session with background
                                           : "text-gray-300"
                                         }
                                         ${(sessionsLoading || !sessionInfo?.session)
                                           ? "opacity-50 cursor-not-allowed"
                                           : "hover:text-[#FFD700] hover:bg-[#444444]" // Hover effect
-                                        }`}
+                                        }
+                                        ${sessionInfo?.loading ? "opacity-75" : ""}
+                                      `}
                                     >
-                                      {sessionInfo?.loading
-                                        ? 'Loading...' // Shortened loading text
-                                        : displayTitle}
+                                      {/* Active indicator */}
+                                      {currentSessionId === sessionInfo?.session?._id && (
+                                        <div className="absolute left-1 top-1/2 transform -translate-y-1/2 w-2 h-2 bg-[#FFD700] rounded-full"></div>
+                                      )}
+                                      <div className={currentSessionId === sessionInfo?.session?._id ? "ml-4" : ""}>
+                                        {sessionInfo?.loading
+                                          ? 'Switching...' // Changed loading text
+                                          : displayTitle}
+                                      </div>
                                     </button>
                                   </div>
                                 );

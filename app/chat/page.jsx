@@ -141,6 +141,10 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel, 
       try {
         setIsSessionLoading(true);
         setHistoryLoaded(false);
+        
+        // Clear messages immediately when switching sessions
+        setMessages([]);
+        
         const history = await fetchChatHistory();
         const updatedHistory = history.map(msg => {
           // Only add default tokenUsage if the field is completely missing
@@ -168,13 +172,14 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel, 
       } catch (error) {
         console.error('Error loading chat history:', error);
         toast.error('Failed to load chat history');
+        setMessages([]); // Clear messages on error too
       } finally {
         setIsSessionLoading(false);
       }
     };
 
     loadChatHistory();
-  }, [userId, currentSessionId, fetchChatHistory, scrollToBottom, setMessages]);
+  }, [userId, currentSessionId]); // Removed fetchChatHistory, scrollToBottom, setMessages from dependencies
 
   // Get studentId from URL params
   useEffect(() => {
@@ -188,10 +193,10 @@ function ChatPageContent({ inputText, selectedFiles, isWideView, selectedModel, 
   useEffect(() => {
     const sessionId = initialSessionId || searchParams.get('sessionId');
     if (sessionId && sessionId !== currentSessionId) {
-      console.log('Setting session ID:', sessionId);
+      console.log('Setting session ID from props/URL:', sessionId);
       setCurrentSessionId(sessionId);
     }
-  }, [initialSessionId, searchParams, currentSessionId, setCurrentSessionId]);
+  }, [initialSessionId, searchParams]); // Removed currentSessionId from dependencies to prevent loops
 
   const handleCopy = (index) => {
     navigator.clipboard.writeText(messages[index].message);

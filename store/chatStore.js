@@ -18,6 +18,7 @@ const useChatStore = create((set, get) => ({
   isMessageSending: false,
   isNavigating: false,
   processingMessage: false,
+  isSessionSwitching: false, // Add flag to track session switching
 
   // Add these new state properties
   tokenUsage: {
@@ -54,6 +55,7 @@ const useChatStore = create((set, get) => ({
   setMessageSending: (isMessageSending) => set({ isMessageSending }),
   setNavigating: (isNavigating) => set({ isNavigating }),
   setProcessingMessage: (processingMessage) => set({ processingMessage }),
+  setSessionSwitching: (isSessionSwitching) => set({ isSessionSwitching }),
 
   // Actions
   addMessage: (message) => set(state => {
@@ -220,7 +222,20 @@ const useChatStore = create((set, get) => ({
   loadSession: async (sessionId) => {
     console.log('🔄 Loading session:', sessionId?.substring(0, 8) + '...');
     
-    const userId = get().userId;
+    const currentState = get();
+    const userId = currentState.userId;
+    
+    // Don't reload if it's the same session
+    if (currentState.currentSessionId === sessionId) {
+      console.log('📌 Session already loaded:', sessionId?.substring(0, 8) + '...');
+      return true;
+    }
+
+    // Prevent multiple concurrent session switches
+    if (currentState.isSessionSwitching) {
+      console.log('⏳ Session switch already in progress, skipping...');
+      return false;
+    }
     
     if (!userId) {
       try {
@@ -236,21 +251,26 @@ const useChatStore = create((set, get) => ({
     }
 
     try {
+      // Set session switching flag and clear state immediately for session switch
       set({ 
+        isSessionSwitching: true,
         currentSessionId: sessionId,
         isLoading: true,
-        messages: [] // Clear previous messages
+        messages: [], // Clear previous messages immediately
+        isGenerating: false, // Stop any ongoing generation
+        currentInput: '', // Clear current input
+        currentAttachment: null // Clear attachments
       });
       
       console.log('📖 Fetching chat history for session...');
       await get().fetchChatHistory();
       
       console.log('✅ Session loaded successfully');
-      set({ isLoading: false });
+      set({ isLoading: false, isSessionSwitching: false });
       return true;
     } catch (error) {
       console.error('💥 Failed to load session:', error);
-      set({ isLoading: false, messages: [] });
+      set({ isLoading: false, messages: [], isSessionSwitching: false });
       return false;
     }
   },
