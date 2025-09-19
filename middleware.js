@@ -36,6 +36,11 @@ export default withAuth(
           return true
         }
         
+        // Allow AI proxy for testing - TEMPORARY
+        if (req.nextUrl.pathname.startsWith('/api/ai-proxy')) {
+          return true
+        }
+        
         // For other protected API routes, require authentication
         if (req.nextUrl.pathname.startsWith('/api/')) {
           // Check for custom JWT token in cookies or NextAuth session

@@ -451,9 +451,10 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
       data: {
         model: 'local',
         messages: messages, // Use original messages without modification
-        max_tokens: 512, // Increased for complete responses
+        // No max_tokens limit - let AI generate complete responses
         temperature: 0.7,
-        stop: ["User:", "System:", "DeepSeek:", "We need to", "The user", "So we", "Let's", "CRITICAL", "REMINDER:"]
+        // Minimal stop sequences to prevent cutting off responses
+        stop: []
       },
       headers: {
         'Content-Type': 'application/json'
@@ -475,9 +476,10 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
       data: {
         model: 'local',
         prompt: prompt,
-        max_tokens: 512, // Increased for complete responses
+        // No max_tokens limit - let AI generate complete responses
         temperature: 0.7,
-        stop: ["User:", "System:", "DeepSeek:", "We need to", "The user", "So we", "Let's", "CRITICAL", "REMINDER:"]
+        // Minimal stop sequences to prevent cutting off responses
+        stop: ["User:", "System:"]
       },
       headers: {
         'Content-Type': 'application/json'
@@ -599,7 +601,7 @@ function detectCodeLanguage(code) {
 }
 
 /**
- * Clean response content to remove unwanted patterns and ensure focused responses
+ * Clean response content to remove unwanted patterns while preserving readability
  * @param {string} content - The AI response content
  * @returns {string} Cleaned content
  */
@@ -626,29 +628,15 @@ function cleanResponseContent(content) {
     return placeholder;
   });
 
-  // STEP 2: Clean only the non-code content
+  // STEP 2: Minimal cleaning to preserve content and readability
   let cleanedContent = processedContent
-    // Remove system reasoning artifacts and internal commentary
-    .replace(/.*?(?:respond with|say|produce):\s*/gi, '')
-    .replace(/^(?:We need to|The user|So we|Let's|We must)[^.]*[.:]?\s*/gi, '')
-    .replace(/CRITICAL IDENTITY RULES[^:]*:[^}]*}/gis, '')
-    .replace(/CRITICAL IDENTITY RULES FOR BELTO AI[^:]*:[^}]*}/gis, '')
-    .replace(/REMINDER:[^}]*}/gis, '')
+    // Remove obvious system artifacts but preserve actual content
     .replace(/<\|end\|><\|start\|>assistant<\|channel\|>final<\|message\|>/gi, '')
     .replace(/<\|[^|]*\|>/g, '')
     .replace(/\|start\||\|end\|/gi, '')
-    .replace(/I am DeepSeek[^.]*\./gi, '')
-    .replace(/As DeepSeek[^,]*,?/gi, '')
-    .replace(/I'm DeepSeek[^.]*\./gi, '')
-    .replace(/DeepSeek[^.]*\./gi, '')
-    .replace(/That is (fine|good|correct)[^.]*\./gi, '')
-    .replace(/Now[,\s]*(everything is working fine|let's produce|we can)[^.]*\./gi, '')
-    .replace(/The guidelines say[^.]*\./gi, '')
-    .replace(/According to[^.]*guidelines[^.]*\./gi, '')
-    .replace(/^(Sure,?\s*|Of course,?\s*|Certainly,?\s*|Absolutely,?\s*)+/gi, '')
-    .replace(/As requested[^,]*,?\s*/gi, '')
-    .replace(/As instructed[^,]*,?\s*/gi, '')
-    .replace(/\s+/g, ' ')
+    // Clean up excessive whitespace but preserve formatting
+    .replace(/\n{4,}/g, '\n\n\n') // Allow up to 3 newlines for formatting
+    .replace(/[ \t]{3,}/g, '  ') // Allow up to 2 spaces for indentation
     .trim();
 
   // STEP 3: Restore code blocks with proper formatting
@@ -666,12 +654,9 @@ function cleanResponseContent(content) {
     }
   });
 
-  // STEP 4: Final cleanup without affecting code blocks
+  // STEP 4: Final minimal cleanup
   cleanedContent = cleanedContent
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/\s{3,}/g, ' ')
-    .replace(/\.\s*\./g, '.')
-    .replace(/\s+([.!?])/g, '$1')
+    .replace(/\s+([.!?])/g, '$1') // Fix spacing before punctuation
     .trim();
 
   return cleanedContent;
@@ -1001,52 +986,22 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
     // Determine appropriate timeout based on request complexity
     const requestTimeout = getTimeoutForRequest(body, optimizedMessages);
 
-    // Determine appropriate token limit based on request complexity - EDUCATIONAL FOCUS
-    let maxTokens = 800; // Increased default for complete, comprehensive responses
-    const totalContentLength = optimizedMessages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
-    const hasAttachments = body.attachments && body.attachments.length > 0;
+    // Remove token limits to allow complete responses
+    // The endpoints will generate naturally complete responses without artificial limits
     
-    // EDUCATIONAL RESPONSE OPTIMIZATION: Ensure complete, helpful responses
-    if (!hasAttachments && totalContentLength < 100) {
-      maxTokens = 300; // Further increased for complete basic responses
-      console.log(`� Using basic educational token limit (${maxTokens}) for simple message`);
-    } else if (!hasAttachments && totalContentLength < 200) {
-      maxTokens = 500; // Further increased for comprehensive responses
-      console.log(`📚 Using standard educational token limit (${maxTokens}) for simple message`);
-    } else if (!hasAttachments && totalContentLength < 500) {
-      maxTokens = 800; // Further increased for detailed explanations
-      console.log(`� Using enhanced educational token limit (${maxTokens}) for basic request`);
-    } else if (!hasAttachments && totalContentLength < 1000) {
-      maxTokens = 1200; // Further increased for comprehensive responses
-      console.log(`📝 Using comprehensive token limit (${maxTokens}) for normal request`);
-    } else if (hasAttachments) {
-      // EDUCATIONAL DOCUMENT PROCESSING: Scale appropriately for academic content
-      const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
-      if (docSize > 100000) {
-        maxTokens = 2000; // Increased for comprehensive document analysis
-      } else if (docSize > 50000) {
-        maxTokens = 1500; // Increased for detailed document analysis
-      } else if (docSize > 20000) {
-        maxTokens = 1000; // Increased for comprehensive analysis
-      } else {
-        maxTokens = 800; // Increased for thorough document understanding
-      }
-      console.log(`📄 Using adaptive token limit (${maxTokens}) for document request`);
-    }
-
-    // Prepare the request payload optimized for speed
+    // Prepare the request payload optimized for complete responses
     const aiRequestPayload = {
       model: body.aiConfig?.model || body.preferences?.model || 'default-model',
       messages: optimizedMessages,
       temperature: body.aiConfig?.temperature || body.preferences?.temperature || 0.7,
-      max_tokens: Math.min(body.aiConfig?.maxTokens || body.preferences?.maxTokens || maxTokens, maxTokens),
+      // No max_tokens - let AI generate complete responses naturally
       stream: body.aiConfig?.streaming || body.preferences?.streaming || false, // Add streaming support
     };
 
     console.log('Request payload structure:', Object.keys(aiRequestPayload));
     console.log('Message count:', aiRequestPayload.messages.length);
     console.log('Using timeout:', requestTimeout + 'ms');
-    console.log('Token limit:', aiRequestPayload.max_tokens);
+    console.log('No token limits - allowing complete responses');
     console.log('Streaming enabled:', aiRequestPayload.stream);
     console.log('Admin preferences streaming:', body.preferences?.streaming);
     console.log('AI config streaming:', body.aiConfig?.streaming);
@@ -1069,6 +1024,10 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
     }
     
     console.log('✅ Payload validation passed, proceeding with AI request');
+    
+    // Define variables needed for retry logic
+    const hasAttachments = body.attachments && body.attachments.length > 0;
+    const totalContentLength = optimizedMessages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
     
     // ADAPTIVE retry logic: more retries for document/large requests
     let lastError = null;
@@ -1171,38 +1130,13 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
             throw new Error('Empty response content received from AI service');
           }
           
-          // Apply comprehensive response cleaning
+          // Apply minimal cleaning to preserve natural AI responses
           let finalContent = cleanResponseContent(parsedResponse.content);
           
-          // Additional safety check for artifacts
-          if (finalContent.includes('We need to') || 
-              finalContent.includes('CRITICAL IDENTITY') ||
-              finalContent.includes('<|') ||
-              finalContent.includes('The user') ||
-              finalContent.includes('So we respond')) {
-            console.log('🧹 Additional artifact cleaning required');
-            finalContent = finalContent
-              .split('\n')
-              .filter(line => {
-                const lower = line.toLowerCase();
-                return !lower.includes('we need to') && 
-                       !lower.includes('critical identity') &&
-                       !lower.includes('the user') &&
-                       !lower.includes('so we respond') &&
-                       !lower.includes('<|');
-              })
-              .join('\n')
-              .trim();
-          }
-          
-          // Ensure we have meaningful content after cleaning
-          if (!finalContent || finalContent.trim().length < 10) {
-            console.log('🔄 Content too short after cleaning, providing educational fallback');
-            if (body.attachments && body.attachments.length > 0) {
-              finalContent = "Hello! I'm BELTO AI, your educational assistant. I've processed your document and I'm ready to provide comprehensive analysis. Could you please ask me a specific question about the content so I can give you a detailed and helpful response?";
-            } else {
-              finalContent = "Hello! I'm BELTO AI, your educational assistant. I'm here to provide comprehensive support for your academic needs. How can I help you with your studies today?";
-            }
+          // Only basic validation - preserve the AI's natural response
+          if (!finalContent || finalContent.trim().length < 5) {
+            console.log('⚠️ Response too short after cleaning, using original content');
+            finalContent = parsedResponse.content.trim();
           }
           
           // Apply post-processing rules if provided
