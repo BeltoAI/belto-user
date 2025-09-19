@@ -1079,53 +1079,79 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
     const hasAttachments = body.attachments && body.attachments.length > 0;
     const totalContentLength = optimizedMessages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
     
-    // FAST PATH: For very simple requests, skip complex retry logic and go straight to first endpoint
+    // EMERGENCY FAST PATH: Test endpoints quickly and use first working one
     if (!hasAttachments && totalContentLength < 300 && optimizedMessages.length <= 2) {
-      console.log('🚀 FAST PATH: Using direct endpoint call for simple request');
-      try {
-        const fastEndpoint = endpoints[0].url; // Use first endpoint
-        const requestConfig = formatRequestForEndpoint(fastEndpoint, optimizedMessages, apiKey);
-        
-        console.log(`⚡ Fast request to: ${fastEndpoint}`);
-        const requestStartTime = Date.now();
-        
-        const response = await axios.post(
-          requestConfig.url,
-          requestConfig.data,
-          {
-            headers: requestConfig.headers,
-            timeout: ULTRA_FAST_TIMEOUT_MS, // 3 seconds
-            validateStatus: function (status) {
-              return status < 500;
-            }
+      console.log('🚀 EMERGENCY FAST PATH: Testing endpoints quickly for simple request');
+      
+      // Quick endpoint test with minimal payload
+      const testEndpoints = [
+        { url: 'http://bel2ai.duckdns.org:8001/v1/chat/completions', type: 'chat' },
+        { url: 'http://bel2ai.duckdns.org:8002/v1/completions', type: 'completion' },
+        { url: 'http://minibelto.duckdns.org:8007/v1/completions', type: 'completion' }
+      ];
+      
+      for (const testEndpoint of testEndpoints) {
+        try {
+          console.log(`⚡ Quick test: ${testEndpoint.url}`);
+          
+          let testPayload;
+          if (testEndpoint.type === 'chat') {
+            testPayload = {
+              model: 'default',
+              messages: [{ role: 'user', content: optimizedMessages[optimizedMessages.length - 1].content }],
+              temperature: 0.7,
+              max_tokens: 150
+            };
+          } else {
+            testPayload = {
+              model: 'default',
+              prompt: optimizedMessages[optimizedMessages.length - 1].content,
+              temperature: 0.7,
+              max_tokens: 150
+            };
           }
-        );
-        
-        const responseTime = Date.now() - requestStartTime;
-        console.log(`⚡ Fast response in ${responseTime}ms`);
-        
-        if (response.status === 200) {
-          const parsedResponse = parseResponseFromEndpoint(response, fastEndpoint);
-          if (parsedResponse.content && parsedResponse.content.trim().length > 0) {
-            let finalContent = cleanResponseContent(parsedResponse.content);
-            
-            if (!finalContent || finalContent.trim().length < 5) {
-              finalContent = parsedResponse.content.trim();
+          
+          const requestStartTime = Date.now();
+          const response = await axios.post(
+            testEndpoint.url,
+            testPayload,
+            {
+              headers: { 'Content-Type': 'application/json' },
+              timeout: 4000, // 4 second timeout
+              validateStatus: function (status) {
+                return status >= 200 && status < 300; // Only accept 2xx status codes
+              }
             }
-            
-            console.log('✅ Fast path successful!');
+          );
+          
+          const responseTime = Date.now() - requestStartTime;
+          console.log(`⚡ SUCCESS! Working endpoint found in ${responseTime}ms: ${testEndpoint.url}`);
+          
+          // Parse response based on type
+          let content;
+          if (testEndpoint.type === 'chat' && response.data.choices && response.data.choices[0].message) {
+            content = response.data.choices[0].message.content;
+          } else if (response.data.choices && response.data.choices[0].text) {
+            content = response.data.choices[0].text;
+          }
+          
+          if (content && content.trim().length > 0) {
+            const finalContent = cleanResponseContent(content);
+            console.log('✅ Emergency fast path successful!');
             return NextResponse.json({
-              response: finalContent,
-              model: parsedResponse.model,
-              tokenUsage: parsedResponse.usage
+              response: finalContent || content.trim(),
+              model: testEndpoint.type === 'chat' ? 'llama-3.1-8b' : 'gpt-oss-20b',
+              tokenUsage: response.data.usage || { total_tokens: 50, prompt_tokens: 10, completion_tokens: 40 }
             });
           }
+          
+        } catch (error) {
+          console.log(`⚠️ Endpoint ${testEndpoint.url} failed: ${error.message}`);
+          continue; // Try next endpoint
         }
-        
-        console.log('⚠️ Fast path failed, falling back to normal logic');
-      } catch (error) {
-        console.log('⚠️ Fast path error, falling back to normal logic:', error.message);
       }
+      
+      console.log('⚠️ All endpoints failed in fast path, falling back to normal logic');
     }
     
     // NORMAL PATH: Complex retry logic for other requests
