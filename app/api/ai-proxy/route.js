@@ -133,10 +133,11 @@ const endpointStats = endpoints.map(endpoint => ({
   lastCircuitBreakerCheck: Date.now()
 }));
 
-// Optimized timeouts for faster responses while maintaining reliability
-const FAST_TIMEOUT_MS = 4000; // Balanced timeout for simple messages
-const BASE_TIMEOUT_MS = 7000; // Balanced timeout for normal requests  
-const ATTACHMENT_TIMEOUT_MS = 20000; // Reduced for faster document processing
+// Optimized timeouts for faster responses to match curl performance
+const ULTRA_FAST_TIMEOUT_MS = 3000; // For very simple requests
+const FAST_TIMEOUT_MS = 5000; // For simple messages
+const BASE_TIMEOUT_MS = 8000; // For normal requests  
+const ATTACHMENT_TIMEOUT_MS = 20000; // For document processing
 const MAX_CONSECUTIVE_FAILURES = 2; // More balanced failure threshold
 const RETRY_INTERVAL_MS = 25000; // Balanced retry interval
 const HEALTH_CHECK_THRESHOLD = 120000; // Back to 2 minutes for more frequent checks
@@ -155,14 +156,14 @@ function getTimeoutForRequest(body, messages) {
   const hasLargeContent = messages.some(msg => msg.content && msg.content.length > 1000);
   const totalContentLength = messages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
   
-  // ULTRA-FAST TRACK: Even more aggressive for very simple messages
-  if (!hasAttachments && !hasLargeContent && totalContentLength < 100) {
-    console.log(`🚀 Using ULTRA-FAST timeout (3000ms) for very simple message: ${totalContentLength} chars`);
-    return 3000; // Ultra-fast for "hi", "hello", etc.
+  // ULTRA-FAST TRACK: Match curl performance for simple messages
+  if (!hasAttachments && !hasLargeContent && totalContentLength < 300) {
+    console.log(`🚀 Using ULTRA-FAST timeout (${ULTRA_FAST_TIMEOUT_MS}ms) for simple message: ${totalContentLength} chars`);
+    return ULTRA_FAST_TIMEOUT_MS;
   }
-  // FAST TRACK: Ultra-fast processing for simple messages
-  if (!hasAttachments && !hasLargeContent && totalContentLength < 200) {
-    console.log(`⚡ Using FAST timeout (${FAST_TIMEOUT_MS}ms) for simple message: ${totalContentLength} chars`);
+  // FAST TRACK: Quick processing for short messages
+  if (!hasAttachments && !hasLargeContent && totalContentLength < 800) {
+    console.log(`⚡ Using FAST timeout (${FAST_TIMEOUT_MS}ms) for short message: ${totalContentLength} chars`);
     return FAST_TIMEOUT_MS;
   }
   // ADAPTIVE: For document/large requests, scale timeout with size
@@ -630,12 +631,15 @@ function cleanResponseContent(content) {
 
   // STEP 2: Remove system thinking process and clean artifacts
   let cleanedContent = processedContent
-    // Remove system thinking process that appears at the start
-    .replace(/^.*?(?:We need to respond|I need to|The user|Let me|I should|I'll|I will).*?(?:\.|!|\?)\s*/i, '')
-    .replace(/^.*?(?:Good|Okay|Alright|Fine).*?\?\?\s*/i, '')
-    .replace(/^.*?(?:BELTO AI|as BELTO|respond as).*?(?:\.|!|\?)[\s\n]*/i, '')
-    // Remove internal prompt instructions
-    .replace(/^.*?(?:Use friendly tone|no other languages|Provide clear|simple terms).*?(?:\.|!|\?)[\s\n]*/i, '')
+    // Remove comprehensive system thinking patterns - match entire blocks
+    .replace(/^.*?(?:We have to respond|We need to respond|I need to|The user says|Let me|I should|I'll|I will).*?(?:Let's get|going|next step|accordingly)[\s\S]*?(?=\n\n|\n[A-Z]|$)/i, '')
+    .replace(/^.*?(?:Good|Okay|Alright|Fine).*?\?\?.*?(?:Let's respond|going|next step|accordingly)[\s\S]*?(?=\n\n|\n[A-Z]|$)/i, '')
+    .replace(/^.*?(?:BELTO AI|as BELTO|respond as).*?(?:The instructions|ChatGPT|helpful assistant).*?(?:Let's respond|going|next step|accordingly)[\s\S]*?(?=\n\n|\n[A-Z]|$)/i, '')
+    // Remove internal processing instructions
+    .replace(/^.*?(?:The user wants|The user is|basically saying).*?(?:Let's respond|going|next step|accordingly)[\s\S]*?(?=\n\n|\n[A-Z]|$)/i, '')
+    .replace(/^.*?(?:We can ask|So we can|We need to|maintain conversation).*?(?:Let's respond|going|next step|accordingly)[\s\S]*?(?=\n\n|\n[A-Z]|$)/i, '')
+    // Remove specific patterns from the screenshot
+    .replace(/^.*?\[\.\.\.\].*?(?=\n\n|\n[A-Z]|$)/i, '')
     // Remove obvious system artifacts but preserve actual content
     .replace(/<\|end\|><\|start\|>assistant<\|channel\|>final<\|message\|>/gi, '')
     .replace(/<\|[^|]*\|>/g, '')
@@ -1035,18 +1039,18 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
     const hasAttachments = body.attachments && body.attachments.length > 0;
     const totalContentLength = optimizedMessages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
     
-    // ADAPTIVE retry logic: more retries for document/large requests
+    // OPTIMIZED retry logic: minimal retries for simple requests to match curl performance
     let lastError = null;
     let maxRetries;
     if (hasAttachments) {
-      // Always try all endpoints for each retry for attachments
-      maxRetries = endpoints.length * 2; // Try each endpoint at least twice
-    } else if (!hasAttachments && totalContentLength < 200) {
-      maxRetries = 2;
-    } else if (!hasAttachments && totalContentLength < 1000) {
-      maxRetries = 3;
+      // Try all endpoints for attachments
+      maxRetries = endpoints.length;
+    } else if (!hasAttachments && totalContentLength < 500) {
+      // Simple messages - only 1 attempt for speed (like curl)
+      maxRetries = 1;
     } else {
-      maxRetries = 3;
+      // Complex messages - limited retries
+      maxRetries = 2;
     }
 
     let attemptedEndpoints = new Set(); // Track which endpoints we've tried
