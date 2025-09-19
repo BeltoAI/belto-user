@@ -112,7 +112,7 @@ const endpoints = [
   }
 ];
 
-// Add a flag to enable fallback responses when all endpoints fail - ENABLED with better logging
+// Add a flag to enable fallback responses when all endpoints fail - RE-ENABLED with better conditions
 const ENABLE_FALLBACK_RESPONSES = true;
 
 // 'http://97.90.195.162:9999/v1/chat/completions',
@@ -628,8 +628,14 @@ function cleanResponseContent(content) {
     return placeholder;
   });
 
-  // STEP 2: Minimal cleaning to preserve content and readability
+  // STEP 2: Remove system thinking process and clean artifacts
   let cleanedContent = processedContent
+    // Remove system thinking process that appears at the start
+    .replace(/^.*?(?:We need to respond|I need to|The user|Let me|I should|I'll|I will).*?(?:\.|!|\?)\s*/i, '')
+    .replace(/^.*?(?:Good|Okay|Alright|Fine).*?\?\?\s*/i, '')
+    .replace(/^.*?(?:BELTO AI|as BELTO|respond as).*?(?:\.|!|\?)[\s\n]*/i, '')
+    // Remove internal prompt instructions
+    .replace(/^.*?(?:Use friendly tone|no other languages|Provide clear|simple terms).*?(?:\.|!|\?)[\s\n]*/i, '')
     // Remove obvious system artifacts but preserve actual content
     .replace(/<\|end\|><\|start\|>assistant<\|channel\|>final<\|message\|>/gi, '')
     .replace(/<\|[^|]*\|>/g, '')
@@ -1234,9 +1240,9 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
         availableEndpoints: endpointStats.filter(e => e.isAvailable).length,
         totalEndpoints: endpointStats.length
       });
-      // If fallback is enabled and all endpoints failed, provide a helpful response
-      if (ENABLE_FALLBACK_RESPONSES) {
-        console.log('🔄 Triggering educational fallback response due to connection errors');
+      // Only trigger fallback for genuine connection failures AND when all endpoints are exhausted
+      if (ENABLE_FALLBACK_RESPONSES && attemptedEndpoints.size >= endpoints.length) {
+        console.log('🔄 Triggering educational fallback response due to ALL endpoints failing');
         console.log('Fallback trigger details:', {
           hasAttachments,
           contentLength: body.attachments?.[0]?.content?.length || 0,
