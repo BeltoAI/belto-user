@@ -674,7 +674,7 @@ function cleanResponseContent(content) {
       .replace(/We can (?:ask|say|help|produce)[\s\S]*?(?=(?:Great|Sure|Absolutely|Let's|Here's|Step \d+|\d+\.|$))/gi, '');
   }
   
-  // Method 3: Remove common system artifacts
+  // Method 3: Remove common system artifacts and irrelevant content
   cleanedContent = cleanedContent
     // Remove dots and waiting patterns
     .replace(/^[.\s…]*Wait[.\s…]*$/gmi, '')
@@ -684,6 +684,19 @@ function cleanResponseContent(content) {
     .replace(/<\|end\|><\|start\|>assistant<\|channel\|>final<\|message\|>/gi, '')
     .replace(/<\|[^|]*\|>/g, '')
     .replace(/\|start\||\|end\|/gi, '')
+    // AGGRESSIVE FILTER: Remove irrelevant programming content
+    .replace(/But we need to think:[\s\S]*?(?=(?:\n\n|$))/gi, '')
+    .replace(/The question:[\s\S]*?lambda[\s\S]*?(?=(?:\n\n|$))/gi, '')
+    .replace(/In the context of[\s\S]*?provided code[\s\S]*?(?=(?:\n\n|$))/gi, '')
+    .replace(/what is the difference between[\s\S]*?enclosing method[\s\S]*?(?=(?:\n\n|$))/gi, '')
+    .replace(/In the lambda[\s\S]*?refers to[\s\S]*?(?=(?:\n\n|$))/gi, '')
+    .replace(/you can't declare local classes[\s\S]*?(?=(?:\n\n|$))/gi, '')
+    .replace(/But the question likely expects[\s\S]*?(?=(?:\n\n|$))/gi, '')
+    .replace(/lexical sc[\s\S]*?$/gi, '')
+    // Remove incomplete or truncated responses
+    .replace(/^to chat\??\s*$/gmi, '')
+    .replace(/^\"\.\s*$/gmi, '')
+    .replace(/^[a-z]{1,3}\s*$/gmi, '') // Remove single words like "to"
     // Clean up excessive whitespace
     .replace(/\n{4,}/g, '\n\n')
     .replace(/[ \t]{3,}/g, '  ')
@@ -704,10 +717,34 @@ function cleanResponseContent(content) {
     }
   });
 
-  // STEP 4: Final minimal cleanup
+  // STEP 4: Final validation and cleanup
   cleanedContent = cleanedContent
     .replace(/\s+([.!?])/g, '$1') // Fix spacing before punctuation
     .trim();
+
+  // STEP 5: Final validation - detect completely irrelevant responses
+  const irrelevantPatterns = [
+    /lambda|enclosing method|local classes/i,
+    /programming|java|javascript|this\s+refers\s+to/i,
+    /question.*expects|context.*provided.*code/i,
+    /^to\s*chat?\??\s*$/i,
+    /^\s*[a-z]{1,3}\s*$/i // Single short words
+  ];
+  
+  const isIrrelevant = irrelevantPatterns.some(pattern => pattern.test(cleanedContent));
+  const isTooShort = cleanedContent.length < 10;
+  
+  if (isIrrelevant || isTooShort) {
+    console.log('🚨 DETECTED IRRELEVANT RESPONSE - Replacing with appropriate response');
+    console.log('Irrelevant content:', cleanedContent.substring(0, 100));
+    
+    // Return appropriate conversational response instead
+    if (cleanedContent.includes('hi') || cleanedContent.includes('hello')) {
+      return "Hello! I'm BELTO AI, your educational assistant. How can I help you with your studies today?";
+    } else {
+      return "I'm BELTO AI, your educational assistant. I'm here to help you with your academic questions and learning needs. What would you like to know?";
+    }
+  }
 
   return cleanedContent;
 }
@@ -1043,9 +1080,76 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
     // The endpoints will generate naturally complete responses without artificial limits
     
     // Prepare the request payload optimized for complete responses
+    // DYNAMIC SYSTEM PROMPT: Check database for lecture-specific prompts
+    let systemPrompt = {
+      role: 'system',
+      content: `You are BELTO AI, a helpful educational assistant. CRITICAL INSTRUCTIONS:
+1. Give direct, conversational responses to the user
+2. Do NOT discuss programming, lambda functions, Java, JavaScript, or any technical code concepts unless the user specifically asks about programming
+3. Do NOT mention "context of provided code", "enclosing method", "local classes", or any programming terminology
+4. If the user says "hi" or "hello", respond with a friendly greeting as BELTO AI
+5. If the user asks "how are you", respond conversationally as an AI assistant
+6. Focus ONLY on educational assistance and normal conversation
+7. NEVER generate programming explanations unless explicitly requested
+8. Keep responses natural and conversational
+9. Do not discuss technical concepts unless directly asked about them`
+    };
+    
+    // Check if there's a lecture context and fetch custom system prompts
+    if (body.sessionId || body.lectureId || body.preferences) {
+      try {
+        console.log('🔍 Checking for lecture-specific system prompts...');
+        
+        let lectureId = body.lectureId || body.sessionId;
+        let customSystemPrompts = null;
+        
+        // If we have preferences passed directly, use them
+        if (body.preferences && body.preferences.systemPrompts && body.preferences.systemPrompts.length > 0) {
+          customSystemPrompts = body.preferences.systemPrompts;
+          console.log('✅ Using system prompts from preferences:', customSystemPrompts.length, 'prompts');
+        }
+        // Otherwise, fetch from database if we have lectureId
+        else if (lectureId) {
+          console.log('🔍 Fetching system prompts for lecture:', lectureId);
+          try {
+            // Import the model here to avoid circular dependencies
+            const { default: AIPreference } = await import('@/models/AIPreferences');
+            const { default: connectDB } = await import('@/lib/db');
+            
+            await connectDB();
+            const aiPreferences = await AIPreference.findOne({ lectureId: lectureId });
+            
+            if (aiPreferences && aiPreferences.systemPrompts && aiPreferences.systemPrompts.length > 0) {
+              customSystemPrompts = aiPreferences.systemPrompts;
+              console.log('✅ Fetched system prompts from database:', customSystemPrompts.length, 'prompts');
+            } else {
+              console.log('ℹ️ No system prompts found in database for lecture:', lectureId);
+            }
+          } catch (dbError) {
+            console.error('⚠️ Database error fetching system prompts:', dbError.message);
+          }
+        }
+        
+        // Apply custom system prompts if available
+        if (customSystemPrompts && customSystemPrompts.length > 0) {
+          // Use the first system prompt or combine multiple ones
+          const mainPrompt = customSystemPrompts[0];
+          systemPrompt.content = mainPrompt.content || systemPrompt.content;
+          console.log('✅ Applied lecture-specific system prompt:', mainPrompt.name || 'Custom prompt');
+        } else {
+          console.log('ℹ️ No custom system prompts found, using default BELTO AI prompt');
+        }
+      } catch (error) {
+        console.error('⚠️ Error fetching system prompts, using default:', error.message);
+      }
+    }
+    
+    // Ensure system prompt is always first
+    const messagesWithSystemPrompt = [systemPrompt, ...optimizedMessages];
+    
     const aiRequestPayload = {
       model: body.aiConfig?.model || body.preferences?.model || 'default-model',
-      messages: optimizedMessages,
+      messages: messagesWithSystemPrompt,
       temperature: body.aiConfig?.temperature || body.preferences?.temperature || 0.7,
       // No max_tokens - let AI generate complete responses naturally
       stream: body.aiConfig?.streaming || body.preferences?.streaming || false, // Add streaming support
@@ -1114,11 +1218,11 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
         history: body.history?.length || 0
       });
       
-      // Quick endpoint test with minimal payload
+      // Quick endpoint test with minimal payload - TRY DIFFERENT MODEL FIRST
       const testEndpoints = [
-        { url: 'http://bel2ai.duckdns.org:8001/v1/chat/completions', type: 'chat' },
-        { url: 'http://bel2ai.duckdns.org:8002/v1/completions', type: 'completion' },
-        { url: 'http://minibelto.duckdns.org:8007/v1/completions', type: 'completion' }
+        { url: 'http://bel2ai.duckdns.org:8002/v1/completions', type: 'completion' }, // Try this first
+        { url: 'http://minibelto.duckdns.org:8007/v1/completions', type: 'completion' },
+        { url: 'http://bel2ai.duckdns.org:8001/v1/chat/completions', type: 'chat' } // Last resort
       ];
       
       for (const testEndpoint of testEndpoints) {
@@ -1126,17 +1230,45 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
           console.log(`⚡ Quick test: ${testEndpoint.url}`);
           
           let testPayload;
+          const userMessage = optimizedMessages[optimizedMessages.length - 1].content;
+          
+          // DYNAMIC SYSTEM PROMPT for emergency fast path
+          let systemPromptContent = `You are BELTO AI, a helpful educational assistant. IMPORTANT INSTRUCTIONS:
+1. Give direct, conversational responses to the user
+2. Do NOT discuss programming, lambda functions, Java, JavaScript, or any technical code concepts unless the user specifically asks about programming
+3. Do NOT mention "context of provided code", "enclosing method", "local classes", or any programming terminology
+4. If the user says "hi" or "hello", respond with a friendly greeting as BELTO AI
+5. If the user asks "how are you", respond conversationally as an AI assistant
+6. Focus ONLY on educational assistance and normal conversation
+7. NEVER generate programming explanations unless explicitly requested
+8. Keep responses natural and conversational`;
+          
+          // Check for custom system prompts in emergency fast path too
+          if (body.preferences && body.preferences.systemPrompts && body.preferences.systemPrompts.length > 0) {
+            const customPrompt = body.preferences.systemPrompts[0];
+            systemPromptContent = customPrompt.content || systemPromptContent;
+            console.log('🚀 Fast path using custom system prompt:', customPrompt.name || 'Custom prompt');
+          }
+          
           if (testEndpoint.type === 'chat') {
             testPayload = {
               model: 'default',
-              messages: [{ role: 'user', content: optimizedMessages[optimizedMessages.length - 1].content }],
+              messages: [
+                { role: 'system', content: systemPromptContent },
+                { role: 'user', content: userMessage }
+              ],
               temperature: 0.7,
               max_tokens: 150
             };
           } else {
+            // For completion models, add the system instruction in the prompt
+            const systemPrompt = `${systemPromptContent}
+
+User: ${userMessage}
+BELTO AI:`;
             testPayload = {
               model: 'default',
-              prompt: optimizedMessages[optimizedMessages.length - 1].content,
+              prompt: systemPrompt,
               temperature: 0.7,
               max_tokens: 150
             };
@@ -1167,10 +1299,41 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
           }
           
           if (content && content.trim().length > 0) {
-            const finalContent = cleanResponseContent(content);
+            // NUCLEAR OPTION: Force clean conversational responses
+            let finalContent = content.trim();
+            
+            // Check if AI violated the system prompt (contaminated response)
+            const violatesSystemPrompt = (
+              finalContent.includes('lambda') ||
+              finalContent.includes('enclosing method') ||
+              finalContent.includes('local classes') ||
+              finalContent.includes('But we need to think') ||
+              finalContent.includes('The question:') ||
+              finalContent.includes('In the context of') ||
+              finalContent.includes('provided code') ||
+              finalContent.includes('programming') ||
+              finalContent.includes('java') ||
+              finalContent.includes('javascript') ||
+              finalContent.match(/^to\s*chat?\??$/i) ||
+              finalContent.match(/^\s*[a-z]{1,5}\s*$/i) ||
+              finalContent.match(/^[^a-zA-Z]*$/) ||
+              finalContent.length < 10
+            );
+            
+            if (violatesSystemPrompt) {
+              console.log('🚨 AI VIOLATED SYSTEM PROMPT - Response contaminated');
+              console.log('Contaminated content:', finalContent.substring(0, 100));
+              console.log('🔄 Trying next endpoint...');
+              continue; // Try next endpoint instead of using contaminated response
+            } else {
+              // Apply normal cleaning to good responses
+              finalContent = cleanResponseContent(content);
+              console.log('✅ Clean response follows system prompt');
+            }
+            
             console.log('✅ Emergency fast path successful!');
             return NextResponse.json({
-              response: finalContent || content.trim(),
+              response: finalContent,
               model: testEndpoint.type === 'chat' ? 'llama-3.1-8b' : 'gpt-oss-20b',
               tokenUsage: response.data.usage || { total_tokens: 50, prompt_tokens: 10, completion_tokens: 40 }
             });
