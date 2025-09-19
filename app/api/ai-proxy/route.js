@@ -1084,20 +1084,35 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
     
     // EMERGENCY FAST PATH: Test endpoints quickly and use first working one
     // More aggressive conditions for better user experience
-    const isSimpleRequest = !hasAttachments && totalContentLength < 500 && optimizedMessages.length <= 5;
-    const isVerySimpleRequest = !hasAttachments && totalContentLength < 100;
+    const userMessage = body.prompt || body.message || '';
+    const actualMessageLength = userMessage.length;
+    const historyLength = (body.history || []).length;
+    
+    // Use actual message length instead of optimizedMessages total
+    const isSimpleRequest = !hasAttachments && actualMessageLength < 100 && historyLength <= 3;
+    const isVerySimpleRequest = !hasAttachments && actualMessageLength < 20;
     
     console.log('🔍 EMERGENCY FAST PATH CHECK:', { 
       hasAttachments, 
       totalContentLength, 
       optimizedMessagesLength: optimizedMessages.length,
+      actualMessageLength,
+      historyLength,
+      userMessage: userMessage.substring(0, 50),
       isSimpleRequest,
       isVerySimpleRequest,
-      willTrigger: isSimpleRequest || isVerySimpleRequest
+      willTrigger: isSimpleRequest || isVerySimpleRequest,
+      rawMessage: optimizedMessages[optimizedMessages.length - 1]?.content || 'NO MESSAGE'
     });
     
     if (isSimpleRequest || isVerySimpleRequest) {
       console.log('🚀 EMERGENCY FAST PATH: Testing endpoints quickly for simple request');
+      console.log('🔍 RAW REQUEST DATA:', { 
+        prompt: body.prompt, 
+        message: body.message,
+        attachments: body.attachments?.length || 0,
+        history: body.history?.length || 0
+      });
       
       // Quick endpoint test with minimal payload
       const testEndpoints = [
@@ -1162,7 +1177,13 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
           }
           
         } catch (error) {
-          console.log(`⚠️ Endpoint ${testEndpoint.url} failed: ${error.message}`);
+          console.log(`⚠️ Endpoint ${testEndpoint.url} failed:`, {
+            message: error.message,
+            code: error.code,
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            data: error.response?.data
+          });
           continue; // Try next endpoint
         }
       }
