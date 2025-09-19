@@ -753,10 +753,13 @@ export async function POST(request) {
     // Initialize messages array
     let messages = [];
    
-    // Include conversation history if provided
+    // Include conversation history if provided - support multiple formats
     if (body.history && Array.isArray(body.history) && body.history.length > 0) {
-      console.log('Using provided conversation history, length:', body.history.length);
+      console.log('Using body.history, length:', body.history.length);
       messages = [...body.history];
+    } else if (body.conversationHistory && Array.isArray(body.conversationHistory) && body.conversationHistory.length > 0) {
+      console.log('Using body.conversationHistory, length:', body.conversationHistory.length);
+      messages = [...body.conversationHistory];
     }
 
     // Handle different request formats - both from generateAIResponse and generateAIResponseWithPreferences
@@ -1080,7 +1083,20 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
     const totalContentLength = optimizedMessages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
     
     // EMERGENCY FAST PATH: Test endpoints quickly and use first working one
-    if (!hasAttachments && totalContentLength < 300 && optimizedMessages.length <= 2) {
+    // More aggressive conditions for better user experience
+    const isSimpleRequest = !hasAttachments && totalContentLength < 500 && optimizedMessages.length <= 5;
+    const isVerySimpleRequest = !hasAttachments && totalContentLength < 100;
+    
+    console.log('🔍 EMERGENCY FAST PATH CHECK:', { 
+      hasAttachments, 
+      totalContentLength, 
+      optimizedMessagesLength: optimizedMessages.length,
+      isSimpleRequest,
+      isVerySimpleRequest,
+      willTrigger: isSimpleRequest || isVerySimpleRequest
+    });
+    
+    if (isSimpleRequest || isVerySimpleRequest) {
       console.log('🚀 EMERGENCY FAST PATH: Testing endpoints quickly for simple request');
       
       // Quick endpoint test with minimal payload
