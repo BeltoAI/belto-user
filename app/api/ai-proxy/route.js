@@ -629,24 +629,64 @@ function cleanResponseContent(content) {
     return placeholder;
   });
 
-  // STEP 2: Remove system thinking process and clean artifacts
-  let cleanedContent = processedContent
-    // Remove comprehensive system thinking patterns - match entire blocks
-    .replace(/^.*?(?:We have to respond|We need to respond|I need to|The user says|Let me|I should|I'll|I will).*?(?:Let's get|going|next step|accordingly)[\s\S]*?(?=\n\n|\n[A-Z]|$)/i, '')
-    .replace(/^.*?(?:Good|Okay|Alright|Fine).*?\?\?.*?(?:Let's respond|going|next step|accordingly)[\s\S]*?(?=\n\n|\n[A-Z]|$)/i, '')
-    .replace(/^.*?(?:BELTO AI|as BELTO|respond as).*?(?:The instructions|ChatGPT|helpful assistant).*?(?:Let's respond|going|next step|accordingly)[\s\S]*?(?=\n\n|\n[A-Z]|$)/i, '')
-    // Remove internal processing instructions
-    .replace(/^.*?(?:The user wants|The user is|basically saying).*?(?:Let's respond|going|next step|accordingly)[\s\S]*?(?=\n\n|\n[A-Z]|$)/i, '')
-    .replace(/^.*?(?:We can ask|So we can|We need to|maintain conversation).*?(?:Let's respond|going|next step|accordingly)[\s\S]*?(?=\n\n|\n[A-Z]|$)/i, '')
-    // Remove specific patterns from the screenshot
-    .replace(/^.*?\[\.\.\.\].*?(?=\n\n|\n[A-Z]|$)/i, '')
-    // Remove obvious system artifacts but preserve actual content
+  // STEP 2: AGGRESSIVE system thinking removal - remove everything before actual response
+  let cleanedContent = processedContent;
+  
+  // Method 1: Remove everything before the actual helpful response starts
+  // Look for common starting patterns of real responses
+  const realResponseStarters = [
+    /Great!/i,
+    /Sure!/i,
+    /Absolutely!/i,
+    /Of course!/i,
+    /I'd be happy/i,
+    /Let's/i,
+    /Here's/i,
+    /To/i,
+    /The/i,
+    /Machine learning/i,
+    /Quantum computing/i,
+    /Step 1:/i,
+    /\d+\./i, // numbered lists
+    /#/i, // headers
+    /\*/i, // bullet points
+  ];
+  
+  // Try to find where the real response starts
+  for (const starter of realResponseStarters) {
+    const match = cleanedContent.match(starter);
+    if (match && match.index > 50) { // Only if there's substantial content before it
+      console.log(`🧹 Found real response starting with: ${match[0]}`);
+      cleanedContent = cleanedContent.substring(match.index);
+      break;
+    }
+  }
+  
+  // Method 2: Remove large blocks of system thinking (fallback)
+  if (cleanedContent.includes('We need to respond') || cleanedContent.includes('The user says')) {
+    console.log('🧹 Applying aggressive system thinking removal');
+    cleanedContent = cleanedContent
+      // Remove everything up to the first real sentence
+      .replace(/^[\s\S]*?(?=(?:Great|Sure|Absolutely|Of course|I'd be happy|Let's|Here's|To help|Machine learning|Quantum computing|Step \d+|\d+\.|#|\*))/, '')
+      // Remove any remaining system thinking blocks
+      .replace(/We need to respond[\s\S]*?(?=(?:Great|Sure|Absolutely|Let's|Here's|Step \d+|\d+\.|$))/gi, '')
+      .replace(/The user says[\s\S]*?(?=(?:Great|Sure|Absolutely|Let's|Here's|Step \d+|\d+\.|$))/gi, '')
+      .replace(/We can (?:ask|say|help|produce)[\s\S]*?(?=(?:Great|Sure|Absolutely|Let's|Here's|Step \d+|\d+\.|$))/gi, '');
+  }
+  
+  // Method 3: Remove common system artifacts
+  cleanedContent = cleanedContent
+    // Remove dots and waiting patterns
+    .replace(/^[.\s…]*Wait[.\s…]*$/gmi, '')
+    .replace(/^[.\s…]*etc[.\s…]*$/gmi, '')
+    .replace(/^[.\s…]{10,}$/gm, '')
+    // Remove system tokens
     .replace(/<\|end\|><\|start\|>assistant<\|channel\|>final<\|message\|>/gi, '')
     .replace(/<\|[^|]*\|>/g, '')
     .replace(/\|start\||\|end\|/gi, '')
-    // Clean up excessive whitespace but preserve formatting
-    .replace(/\n{4,}/g, '\n\n\n') // Allow up to 3 newlines for formatting
-    .replace(/[ \t]{3,}/g, '  ') // Allow up to 2 spaces for indentation
+    // Clean up excessive whitespace
+    .replace(/\n{4,}/g, '\n\n')
+    .replace(/[ \t]{3,}/g, '  ')
     .trim();
 
   // STEP 3: Restore code blocks with proper formatting
@@ -1039,7 +1079,56 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
     const hasAttachments = body.attachments && body.attachments.length > 0;
     const totalContentLength = optimizedMessages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
     
-    // OPTIMIZED retry logic: minimal retries for simple requests to match curl performance
+    // FAST PATH: For very simple requests, skip complex retry logic and go straight to first endpoint
+    if (!hasAttachments && totalContentLength < 300 && optimizedMessages.length <= 2) {
+      console.log('🚀 FAST PATH: Using direct endpoint call for simple request');
+      try {
+        const fastEndpoint = endpoints[0].url; // Use first endpoint
+        const requestConfig = formatRequestForEndpoint(fastEndpoint, optimizedMessages, apiKey);
+        
+        console.log(`⚡ Fast request to: ${fastEndpoint}`);
+        const requestStartTime = Date.now();
+        
+        const response = await axios.post(
+          requestConfig.url,
+          requestConfig.data,
+          {
+            headers: requestConfig.headers,
+            timeout: ULTRA_FAST_TIMEOUT_MS, // 3 seconds
+            validateStatus: function (status) {
+              return status < 500;
+            }
+          }
+        );
+        
+        const responseTime = Date.now() - requestStartTime;
+        console.log(`⚡ Fast response in ${responseTime}ms`);
+        
+        if (response.status === 200) {
+          const parsedResponse = parseResponseFromEndpoint(response, fastEndpoint);
+          if (parsedResponse.content && parsedResponse.content.trim().length > 0) {
+            let finalContent = cleanResponseContent(parsedResponse.content);
+            
+            if (!finalContent || finalContent.trim().length < 5) {
+              finalContent = parsedResponse.content.trim();
+            }
+            
+            console.log('✅ Fast path successful!');
+            return NextResponse.json({
+              response: finalContent,
+              model: parsedResponse.model,
+              tokenUsage: parsedResponse.usage
+            });
+          }
+        }
+        
+        console.log('⚠️ Fast path failed, falling back to normal logic');
+      } catch (error) {
+        console.log('⚠️ Fast path error, falling back to normal logic:', error.message);
+      }
+    }
+    
+    // NORMAL PATH: Complex retry logic for other requests
     let lastError = null;
     let maxRetries;
     if (hasAttachments) {
