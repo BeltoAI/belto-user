@@ -170,10 +170,47 @@ export async function POST(request) {
   try {
     console.log('[AI Proxy] POST request received');
     
-    const { messages } = await request.json();
-    console.log('[AI Proxy] Messages received:', messages?.length || 0);
+    const requestBody = await request.json();
+    console.log('[AI Proxy] Request body received:', JSON.stringify(requestBody, null, 2));
+    
+    // Handle both formats: direct messages array or chat interface format
+    let messages;
+    
+    if (requestBody.messages && Array.isArray(requestBody.messages)) {
+      // Direct format (Thunder Client, external API calls)
+      messages = requestBody.messages;
+      console.log('[AI Proxy] Using direct messages format');
+    } else if (requestBody.prompt) {
+      // Chat interface format
+      console.log('[AI Proxy] Converting chat interface format to messages');
+      messages = [];
+      
+      // Add history messages first
+      if (requestBody.history && Array.isArray(requestBody.history)) {
+        messages.push(...requestBody.history);
+      }
+      
+      // Add current user message
+      messages.push({
+        role: 'user',
+        content: requestBody.prompt
+      });
+      
+      console.log('[AI Proxy] Converted to messages:', messages.length);
+    } else {
+      console.log('[AI Proxy] VALIDATION FAILED: No valid format found');
+      return NextResponse.json({ 
+        error: 'Invalid request format. Expected either "messages" array or "prompt" with optional "history"' 
+      }, { status: 400 });
+    }
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      console.log('[AI Proxy] VALIDATION FAILED:', {
+        hasMessages: !!messages,
+        isArray: Array.isArray(messages),
+        length: messages?.length || 0,
+        fullRequest: requestBody
+      });
       return NextResponse.json({ error: 'Invalid messages format' }, { status: 400 });
     }
 
