@@ -304,6 +304,13 @@ export const useChatHandlers = (
       // Handle AI response result
       let aiResponse, messageTokenUsage;
       if (aiResult.status === 'fulfilled') {
+        console.log('🔍 DEBUG: AI Result from useAIResponse:', {
+          hasFallback: !!aiResult.value.fallback,
+          responseLength: aiResult.value.response?.length || 0,
+          responsePreview: aiResult.value.response?.substring(0, 100) || 'NO RESPONSE',
+          tokenUsage: aiResult.value.tokenUsage
+        });
+        
         // Define quality context first for processing decisions
         const qualityContext = {
           hasDocument: attachmentsToSend.length > 0,

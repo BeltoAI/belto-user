@@ -163,6 +163,17 @@ export const useAIResponse = () => {
           if (response.ok) {
             const data = await response.json();
             
+            // Debug: Log the actual response data
+            console.log('🔍 DEBUG: AI Proxy Response Data:', {
+              hasFallback: !!data.fallback,
+              hasResponse: !!data.response,
+              responseLength: data.response?.length || 0,
+              responsePreview: data.response?.substring(0, 100) || 'NO RESPONSE',
+              tokenUsage: data.tokenUsage,
+              model: data.model,
+              endpoint: data.endpoint
+            });
+            
             // Check if this is a fallback response
             if (data.fallback) {
               console.log('✅ Received enhanced fallback response from AI proxy');
@@ -215,6 +226,12 @@ export const useAIResponse = () => {
             }
             
             console.log(`✅ AI response generated successfully on attempt ${attempt}`);
+            console.log('🔍 DEBUG: Returning successful response:', {
+              responseLength: (data.response || '').length,
+              responsePreview: (data.response || '').substring(0, 100),
+              tokenUsage: data.tokenUsage,
+              limitReached: data.limitReached
+            });
             return {
               response: data.response || 'I apologize, but I could not generate a response.',
               limitReached: data.limitReached || false,
