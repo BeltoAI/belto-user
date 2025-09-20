@@ -135,7 +135,7 @@ async function quickHealthCheck(endpointConfig) {
   }
 }
 
-// Find healthy endpoint
+// Find healthy endpoint with fallback strategy
 async function findHealthyEndpoint() {
   console.log('🎯 Finding healthy endpoint...');
   
@@ -151,6 +151,21 @@ async function findHealthyEndpoint() {
   return endpoints[0]; // Fallback to primary
 }
 
+// Get timeout based on message complexity
+function getSmartTimeout(messages) {
+  const userMessage = messages.find(m => m.role === 'user')?.content || '';
+  const messageLength = userMessage.length;
+  
+  // Base timeout for simple messages
+  if (messageLength < 20) {
+    return 15000; // 15 seconds for simple greetings
+  } else if (messageLength < 100) {
+    return 25000; // 25 seconds for medium questions
+  } else {
+    return 45000; // 45 seconds for complex questions
+  }
+}
+
 export async function POST(request) {
   try {
     console.log('[AI Proxy] POST request received');
@@ -162,58 +177,95 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Invalid messages format' }, { status: 400 });
     }
 
-    // Find a healthy endpoint first
-    const selectedEndpoint = await findHealthyEndpoint();
-    console.log(`[AI Proxy] Using endpoint: ${selectedEndpoint.name}`);
+    // Get smart timeout based on message complexity
+    const smartTimeout = getSmartTimeout(messages);
+    console.log(`[AI Proxy] Using smart timeout: ${smartTimeout}ms`);
 
-    try {
-      const requestConfig = formatRequestForEndpoint(selectedEndpoint.url, messages);
-      console.log(`[AI Proxy] Sending request without timeout...`);
-      
-      const startTime = Date.now();
-      
-      // NO TIMEOUT - wait for complete response
-      const response = await axios.post(requestConfig.url, requestConfig.data, {
-        headers: requestConfig.headers
-        // No timeout to ensure complete responses
-      });
+    // Try multiple endpoints with fallback strategy
+    let lastError = null;
+    
+    for (let i = 0; i < endpoints.length; i++) {
+      const selectedEndpoint = endpoints[i];
+      console.log(`[AI Proxy] Attempting endpoint ${i + 1}/${endpoints.length}: ${selectedEndpoint.name}`);
 
-      const responseTime = Date.now() - startTime;
-      console.log(`[AI Proxy] Response received in ${responseTime}ms`);
-
-      if (response.data) {
-        const parsedResponse = parseResponseFromEndpoint(response, selectedEndpoint.url);
-        
-        if (!parsedResponse.content || parsedResponse.content.trim().length === 0) {
-          throw new Error('Empty response content');
+      try {
+        // Quick health check first
+        const isHealthy = await quickHealthCheck(selectedEndpoint);
+        if (!isHealthy && i < endpoints.length - 1) {
+          console.log(`[AI Proxy] ${selectedEndpoint.name} failed health check, trying next...`);
+          continue;
         }
+
+        const requestConfig = formatRequestForEndpoint(selectedEndpoint.url, messages);
+        console.log(`[AI Proxy] Sending request with ${smartTimeout}ms timeout...`);
         
-        let finalContent = cleanResponseContent(parsedResponse.content);
+        const startTime = Date.now();
         
-        if (!finalContent || finalContent.trim().length < 10) {
-          finalContent = "I am BELTO AI, your educational assistant. How can I help you today?";
-        }
-        
-        console.log(`[AI Proxy] Success! Response length: ${finalContent.length} characters`);
-        
-        return NextResponse.json({
-          response: finalContent,
-          model: selectedEndpoint.model,
-          endpoint: selectedEndpoint.name,
-          responseTime: responseTime,
-          tokenUsage: parsedResponse.usage
+        // Use smart timeout to balance completeness with reliability
+        const response = await axios.post(requestConfig.url, requestConfig.data, {
+          headers: requestConfig.headers,
+          timeout: smartTimeout,
+          // Better connection handling
+          maxRedirects: 0,
+          responseType: 'json'
         });
-      } else {
-        throw new Error('No data in response');
+
+        const responseTime = Date.now() - startTime;
+        console.log(`[AI Proxy] Response received in ${responseTime}ms from ${selectedEndpoint.name}`);
+
+        if (response.data) {
+          const parsedResponse = parseResponseFromEndpoint(response, selectedEndpoint.url);
+          
+          if (!parsedResponse.content || parsedResponse.content.trim().length === 0) {
+            throw new Error('Empty response content');
+          }
+          
+          let finalContent = cleanResponseContent(parsedResponse.content);
+          
+          if (!finalContent || finalContent.trim().length < 10) {
+            finalContent = "I am BELTO AI, your educational assistant. How can I help you today?";
+          }
+          
+          console.log(`[AI Proxy] Success! Response length: ${finalContent.length} characters`);
+          
+          return NextResponse.json({
+            response: finalContent,
+            model: selectedEndpoint.model,
+            endpoint: selectedEndpoint.name,
+            responseTime: responseTime,
+            tokenUsage: parsedResponse.usage
+          });
+        } else {
+          throw new Error('No data in response');
+        }
+        
+      } catch (error) {
+        lastError = error;
+        console.error(`[AI Proxy] ${selectedEndpoint.name} failed:`, error.message);
+        
+        // If this is a socket hang up or timeout, try next endpoint
+        if (error.code === 'ECONNABORTED' || error.message.includes('socket hang up') || error.code === 'ECONNRESET') {
+          console.log(`[AI Proxy] Connection issue with ${selectedEndpoint.name}, trying next endpoint...`);
+          if (i < endpoints.length - 1) {
+            continue; // Try next endpoint
+          }
+        } else {
+          // For other errors, also try next endpoint as fallback
+          if (i < endpoints.length - 1) {
+            console.log(`[AI Proxy] Error with ${selectedEndpoint.name}, trying next endpoint...`);
+            continue;
+          }
+        }
       }
-    } catch (error) {
-      console.error(`[AI Proxy] Request failed:`, error.message);
-      
-      return NextResponse.json({ 
-        error: 'Request failed', 
-        details: error.message 
-      }, { status: 503 });
     }
+
+    // If all endpoints failed, return the last error
+    console.error('[AI Proxy] All endpoints failed');
+    return NextResponse.json({ 
+      error: 'All endpoints failed', 
+      details: lastError?.message || 'Unknown error',
+      suggestion: 'Please try again with a shorter message or try again later.'
+    }, { status: 503 });
 
   } catch (error) {
     console.error('[AI Proxy] Error:', error);
