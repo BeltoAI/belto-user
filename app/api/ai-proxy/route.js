@@ -53,6 +53,7 @@ function applyPostprocessingRules(content, rules) {
   return processedContent;
 }
 
+// Optimized endpoint array with health check approach (no request timeouts)
 const endpoints = [
   {
     url: 'http://bel2ai.duckdns.org:8001/v1/chat/completions',
@@ -60,7 +61,9 @@ const endpoints = [
     model: 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
     type: 'chat',
     context: 16384,
-    parallel: 6
+    parallel: 6,
+    priority: 1, // Highest priority - best context size and parallel processing
+    healthCheckTimeout: 3000 // Quick health check timeout
   },
   {
     url: 'http://bel2ai.duckdns.org:8002/v1/completions',
@@ -68,7 +71,9 @@ const endpoints = [
     model: 'gpt-oss-20b.Q8_0.gguf',
     type: 'completion',
     context: 8192,
-    parallel: 3
+    parallel: 3,
+    priority: 2, // Second priority - good performance, fastest response time
+    healthCheckTimeout: 3000
   },
   {
     url: 'http://bigbelto.duckdns.org:8004/v1/completions',
@@ -76,7 +81,9 @@ const endpoints = [
     model: 'gpt-oss-20b-F16.gguf',
     type: 'completion',
     context: 8192,
-    slots: 1
+    slots: 1,
+    priority: 3, // Third priority - powerful but single slot
+    healthCheckTimeout: 3000
   },
   {
     url: 'http://bigbelto.duckdns.org:8005/v1/completions',
@@ -84,7 +91,9 @@ const endpoints = [
     model: 'Hermes-3-Llama-3.2-3B.Q8_0.gguf',
     type: 'completion',
     context: 4096,
-    slots: 1
+    slots: 1,
+    priority: 4, // Lower priority - smaller context
+    healthCheckTimeout: 3000
   },
   {
     url: 'http://minibelto.duckdns.org:8007/v1/completions',
@@ -92,7 +101,9 @@ const endpoints = [
     model: 'deepseek-llm-7b-chat.Q4_K_M.gguf',
     type: 'completion',
     context: 8192,
-    slots: 1
+    slots: 1,
+    priority: 5, // Medium priority - good context size
+    healthCheckTimeout: 3000
   },
   {
     url: 'http://doublebelto.duckdns.org:8008/v1/completions',
@@ -100,7 +111,9 @@ const endpoints = [
     model: 'gpt-oss-20b-Q4_K_M.gguf',
     type: 'completion',
     context: 4096,
-    slots: 1
+    slots: 1,
+    priority: 6, // Lower priority - smaller context
+    healthCheckTimeout: 3000
   },
   {
     url: 'http://doublebelto.duckdns.org:8009/v1/completions',
@@ -108,7 +121,9 @@ const endpoints = [
     model: 'Hermes-3-Llama-3.2-3B-Q4_K_M.gguf',
     type: 'completion',
     context: 4096,
-    slots: 1
+    slots: 1,
+    priority: 7, // Lowest priority - smallest model
+    healthCheckTimeout: 3000
   }
 ];
 
@@ -117,32 +132,36 @@ const ENABLE_FALLBACK_RESPONSES = true;
 
 // 'http://97.90.195.162:9999/v1/chat/completions',
 
-// Endpoint health tracking with circuit breaker pattern
+// Enhanced endpoint health tracking with priority-based selection
 const endpointStats = endpoints.map(endpoint => ({
   url: endpoint.url,
   name: endpoint.name,
   model: endpoint.model,
   type: endpoint.type,
   context: endpoint.context,
+  priority: endpoint.priority,
+  timeout: endpoint.timeout,
   isAvailable: true,
   failCount: 0,
   lastResponseTime: 0,
   lastChecked: Date.now(),
   consecutiveFailures: 0,
   circuitBreakerOpen: false,
-  lastCircuitBreakerCheck: Date.now()
+  lastCircuitBreakerCheck: Date.now(),
+  successRate: 1.0, // Track success rate for intelligent selection
+  avgResponseTime: 0 // Track average response time
 }));
 
-// Optimized timeouts for faster responses to match curl performance
-const ULTRA_FAST_TIMEOUT_MS = 3000; // For very simple requests
-const FAST_TIMEOUT_MS = 5000; // For simple messages
-const BASE_TIMEOUT_MS = 8000; // For normal requests  
-const ATTACHMENT_TIMEOUT_MS = 20000; // For document processing
-const MAX_CONSECUTIVE_FAILURES = 2; // More balanced failure threshold
-const RETRY_INTERVAL_MS = 25000; // Balanced retry interval
-const HEALTH_CHECK_THRESHOLD = 120000; // Back to 2 minutes for more frequent checks
-const CIRCUIT_BREAKER_THRESHOLD = 3; // More balanced circuit breaker
-const CIRCUIT_BREAKER_TIMEOUT = 45000; // Reduced to 45 seconds
+// Optimized timeouts for faster, complete responses
+const ULTRA_FAST_TIMEOUT_MS = 4000; // Increased from 3000 for more reliable responses
+const FAST_TIMEOUT_MS = 6000; // Increased from 5000 for better completion rates
+const BASE_TIMEOUT_MS = 10000; // Increased from 8000 for complete responses
+const ATTACHMENT_TIMEOUT_MS = 25000; // Increased from 20000 for document processing
+const MAX_CONSECUTIVE_FAILURES = 2; // Keep balanced failure threshold
+const RETRY_INTERVAL_MS = 30000; // Increased to 30 seconds for better recovery
+const HEALTH_CHECK_THRESHOLD = 180000; // Increased to 3 minutes for stability
+const CIRCUIT_BREAKER_THRESHOLD = 3; // Keep balanced circuit breaker
+const CIRCUIT_BREAKER_TIMEOUT = 60000; // Increased to 60 seconds for better recovery
 
 /**
  * Determines appropriate timeout based on request complexity - OPTIMIZED FOR SPEED
@@ -258,72 +277,102 @@ function getTimeoutForRequest(body, messages) {
 }
 
 /**
- * Selects the best endpoint based on availability and response time
- * @returns {string} The URL of the selected endpoint
+ * Quick health check for an endpoint to verify availability
+ * @param {Object} endpointConfig - The endpoint configuration
+ * @returns {Promise<boolean>} True if endpoint is healthy
  */
-function selectEndpoint() {
-  const now = Date.now();
-  
-  // First, check circuit breakers and reset if timeout has passed
-  endpointStats.forEach(endpoint => {
-    if (endpoint.circuitBreakerOpen && (now - endpoint.lastCircuitBreakerCheck) > CIRCUIT_BREAKER_TIMEOUT) {
-      console.log(`Resetting circuit breaker for ${endpoint.url}`);
-      endpoint.circuitBreakerOpen = false;
-      endpoint.consecutiveFailures = 0;
-      endpoint.lastCircuitBreakerCheck = now;
+async function quickHealthCheck(endpointConfig) {
+  try {
+    console.log(`🔍 Health checking ${endpointConfig.name}...`);
+    
+    // Create a minimal test payload
+    let testPayload;
+    if (endpointConfig.type === 'chat') {
+      testPayload = {
+        model: 'local',
+        messages: [
+          { role: 'user', content: 'test' }
+        ],
+        temperature: 0.1,
+        max_tokens: 5 // Minimal response for health check
+      };
+    } else {
+      testPayload = {
+        model: 'local',
+        prompt: 'User: test\nBELTO AI:',
+        temperature: 0.1,
+        max_tokens: 5 // Minimal response for health check
+      };
     }
-  });
-  
-  // Check if any unavailable endpoints should be retried
-  endpointStats.forEach(endpoint => {
-    if (!endpoint.isAvailable && (now - endpoint.lastChecked) > RETRY_INTERVAL_MS) {
-      console.log(`Marking ${endpoint.url} as available for retry`);
-      endpoint.isAvailable = true;
-      endpoint.failCount = 0;
-      endpoint.consecutiveFailures = 0;
-    }
-  });
-
-  // Filter for available endpoints that don't have circuit breaker open
-  const availableEndpoints = endpointStats.filter(endpoint => 
-    endpoint.isAvailable && !endpoint.circuitBreakerOpen
-  );
-  
-  if (availableEndpoints.length === 0) {
-    // All endpoints are unavailable or circuit breaker is open, reset ALL endpoints for retry
-    console.log('⚠️ All endpoints unavailable or circuit breaker open, resetting ALL endpoints for retry');
-    endpointStats.forEach(endpoint => {
-      endpoint.isAvailable = true;
-      endpoint.failCount = Math.max(0, endpoint.failCount - 1); // Reduce fail count
-      endpoint.consecutiveFailures = 0;
-      endpoint.circuitBreakerOpen = false;
+    
+    const startTime = Date.now();
+    const response = await axios.post(endpointConfig.url, testPayload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: endpointConfig.healthCheckTimeout,
+      validateStatus: function (status) {
+        return status >= 200 && status < 500;
+      }
     });
-    return endpointStats[0].url;
+    
+    const responseTime = Date.now() - startTime;
+    const isHealthy = response.status === 200;
+    
+    if (isHealthy) {
+      console.log(`✅ ${endpointConfig.name} is healthy (${responseTime}ms)`);
+      // Update endpoint stats with health check success
+      updateEndpointStats(endpointConfig.url, true, responseTime);
+    } else {
+      console.log(`⚠️ ${endpointConfig.name} returned ${response.status}`);
+      updateEndpointStats(endpointConfig.url, false, 0);
+    }
+    
+    return isHealthy;
+    
+  } catch (error) {
+    console.log(`❌ ${endpointConfig.name} health check failed: ${error.message}`);
+    updateEndpointStats(endpointConfig.url, false, 0);
+    return false;
   }
-  
-  // Choose the fastest available endpoint with the least recent activity
-  availableEndpoints.sort((a, b) => {
-    // First prioritize by availability and circuit breaker status
-    if (a.circuitBreakerOpen !== b.circuitBreakerOpen) {
-      return a.circuitBreakerOpen ? 1 : -1;
-    }
-    // Then by consecutive failures (prefer lower failures)
-    if (a.consecutiveFailures !== b.consecutiveFailures) {
-      return a.consecutiveFailures - b.consecutiveFailures;
-    }
-    // Then prioritize endpoints with faster response times (but only if they've been tested)
-    if (a.lastResponseTime > 0 && b.lastResponseTime > 0) {
-      return a.lastResponseTime - b.lastResponseTime;
-    }
-    // Finally, if response times are equal or untested, prioritize by least total failures
-    return a.failCount - b.failCount;
-  });
-  
-  return availableEndpoints[0].url;
 }
 
 /**
- * Updates endpoint statistics based on request success/failure
+ * Find the best available endpoint by running quick health checks
+ * @param {Array} preferredEndpoints - Array of endpoint URLs in preference order (optional)
+ * @returns {Promise<Object|null>} Endpoint config of the first healthy endpoint or null
+ */
+async function findHealthyEndpoint(preferredEndpoints = null) {
+  // If no preferred endpoints provided, use all endpoints sorted by priority
+  const endpointsToCheck = preferredEndpoints || endpoints
+    .sort((a, b) => a.priority - b.priority)
+    .map(e => e.url);
+  
+  console.log(`🎯 Checking health of ${endpointsToCheck.length} endpoints...`);
+  
+  for (const endpointUrl of endpointsToCheck) {
+    const endpointConfig = endpoints.find(e => e.url === endpointUrl);
+    if (!endpointConfig) continue;
+    
+    // Skip if circuit breaker is open
+    const endpointStat = endpointStats.find(e => e.url === endpointUrl);
+    if (endpointStat && endpointStat.circuitBreakerOpen) {
+      console.log(`⚡ Skipping ${endpointConfig.name} (circuit breaker open)`);
+      continue;
+    }
+    
+    // Perform quick health check
+    const isHealthy = await quickHealthCheck(endpointConfig);
+    if (isHealthy) {
+      console.log(`🎯 Selected healthy endpoint: ${endpointConfig.name}`);
+      return endpointConfig; // Return the full endpoint config instead of just URL
+    }
+  }
+  
+  console.log('⚠️ No healthy endpoints found');
+  return null;
+}
+
+/**
+ * Enhanced endpoint statistics tracking with performance metrics
  * @param {string} url - The endpoint URL
  * @param {boolean} success - Whether the request was successful
  * @param {number} responseTime - Response time in milliseconds
@@ -339,25 +388,43 @@ function updateEndpointStats(url, success, responseTime) {
     endpoint.lastResponseTime = responseTime;
     endpoint.consecutiveFailures = 0;
     endpoint.circuitBreakerOpen = false;
+    
+    // Update average response time (rolling average)
+    if (endpoint.avgResponseTime === 0) {
+      endpoint.avgResponseTime = responseTime;
+    } else {
+      endpoint.avgResponseTime = (endpoint.avgResponseTime * 0.7) + (responseTime * 0.3);
+    }
+    
+    // Update success rate (rolling success rate)
+    endpoint.successRate = Math.min(1.0, endpoint.successRate * 0.9 + 0.1);
+    
     // Gradually reduce fail count on success
     if (endpoint.failCount > 0) {
       endpoint.failCount = Math.max(0, endpoint.failCount - 1);
     }
+    
+    console.log(`✅ ${endpoint.name}: ${responseTime}ms (Avg: ${endpoint.avgResponseTime.toFixed(0)}ms, Success: ${(endpoint.successRate * 100).toFixed(1)}%)`);
   } else {
     endpoint.failCount++;
     endpoint.consecutiveFailures++;
     
+    // Update success rate (rolling failure impact)
+    endpoint.successRate = Math.max(0.0, endpoint.successRate * 0.8);
+    
     // Check if we should open the circuit breaker
     if (endpoint.consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
-      console.log(`Opening circuit breaker for ${url} after ${endpoint.consecutiveFailures} consecutive failures`);
+      console.log(`🔴 Opening circuit breaker for ${endpoint.name} after ${endpoint.consecutiveFailures} consecutive failures`);
       endpoint.circuitBreakerOpen = true;
       endpoint.lastCircuitBreakerCheck = Date.now();
     }
     
     if (endpoint.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-      console.log(`Marking ${url} as unavailable after ${endpoint.consecutiveFailures} consecutive failures`);
+      console.log(`⚠️ Marking ${endpoint.name} as unavailable after ${endpoint.consecutiveFailures} consecutive failures`);
       endpoint.isAvailable = false;
     }
+    
+    console.log(`❌ ${endpoint.name}: Failed (Success: ${(endpoint.successRate * 100).toFixed(1)}%, Failures: ${endpoint.consecutiveFailures})`);
   }
 }
 
@@ -427,8 +494,8 @@ const initializeHealthCheck = () => {
 };
 
 /**
- * Formats request payload and headers for different endpoint types
- * @param {Object} endpoint - The endpoint configuration object
+ * Enhanced request formatting for different endpoint types with no timeout limits
+ * @param {string} endpoint - The endpoint URL  
  * @param {Array} messages - The messages array
  * @param {string} apiKey - The API key
  * @returns {Object} Formatted request config
@@ -440,20 +507,18 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
   }
 
-  // Preserve system messages exactly as provided - no hard-coded modifications
-  // The system prompts should define the AI's behavior, not this function
-
   if (endpointConfig.type === 'chat') {
     // Chat completions format (only port 8001 - Llama 3.1 8B)
-    // Use messages exactly as provided without modification
-    
     return {
       url: endpoint,
       data: {
         model: 'local',
-        messages: messages, // Use original messages without modification
-        // No max_tokens limit - let AI generate complete responses
+        messages: messages,
+        // Optimized settings for complete responses - NO TIMEOUT
         temperature: 0.7,
+        top_p: 0.9,
+        frequency_penalty: 0.0,
+        presence_penalty: 0.0,
         // Minimal stop sequences to prevent cutting off responses
         stop: []
       },
@@ -465,7 +530,7 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
     // Completions format (all other ports)
     const prompt = messages.map(msg => {
       if (msg.role === 'system') {
-        return `System: ${msg.content}`; // Use original system content without modification
+        return `System: ${msg.content}`;
       }
       if (msg.role === 'user') return `User: ${msg.content}`;
       if (msg.role === 'assistant') return `BELTO AI: ${msg.content}`;
@@ -477,8 +542,11 @@ function formatRequestForEndpoint(endpoint, messages, apiKey) {
       data: {
         model: 'local',
         prompt: prompt,
-        // No max_tokens limit - let AI generate complete responses
+        // Optimized settings for complete responses - NO TIMEOUT
         temperature: 0.7,
+        top_p: 0.9,
+        frequency_penalty: 0.0,
+        presence_penalty: 0.0,
         // Minimal stop sequences to prevent cutting off responses
         stop: ["User:", "System:"]
       },
@@ -602,7 +670,7 @@ function detectCodeLanguage(code) {
 }
 
 /**
- * Clean response content to remove unwanted patterns while preserving readability
+ * Enhanced response cleaning to eliminate thinking process and ensure readability
  * @param {string} content - The AI response content
  * @returns {string} Cleaned content
  */
@@ -611,17 +679,16 @@ function cleanResponseContent(content) {
     return '';
   }
 
-  // STEP 1: PRESERVE ALL CODE BLOCKS FIRST - Extract and store them safely
+  // STEP 1: PRESERVE ALL CODE BLOCKS FIRST
   const codeBlocks = [];
   const codeBlockPlaceholders = {};
   let codeBlockIndex = 0;
 
-  // Extract code blocks and replace with placeholders
   let processedContent = content.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, language, code) => {
     const placeholder = `__CODE_BLOCK_${codeBlockIndex}__`;
     codeBlocks[codeBlockIndex] = {
       language: language || 'text',
-      code: code.trim(), // Only trim leading/trailing whitespace, preserve internal formatting
+      code: code.trim(),
       original: match
     };
     codeBlockPlaceholders[placeholder] = codeBlockIndex;
@@ -629,120 +696,134 @@ function cleanResponseContent(content) {
     return placeholder;
   });
 
-  // STEP 2: AGGRESSIVE system thinking removal - remove everything before actual response
+  // STEP 2: AGGRESSIVE REMOVAL OF THINKING PROCESS
   let cleanedContent = processedContent;
   
-  // Method 1: Remove everything before the actual helpful response starts
-  // Look for common starting patterns of real responses
-  const realResponseStarters = [
-    /Great!/i,
-    /Sure!/i,
-    /Absolutely!/i,
-    /Of course!/i,
-    /I'd be happy/i,
-    /Let's/i,
-    /Here's/i,
-    /To/i,
-    /The/i,
-    /Machine learning/i,
-    /Quantum computing/i,
-    /Step 1:/i,
-    /\d+\./i, // numbered lists
-    /#/i, // headers
-    /\*/i, // bullet points
+  // Remove system thinking patterns - ENHANCED PATTERNS
+  const systemThinkingPatterns = [
+    // Remove everything before "final answer" or similar patterns
+    /^[\s\S]*?(?:Thus final answer:|final answer:|Final answer:|assistantfinal)/i,
+    
+    // Remove meta-commentary about system messages
+    /according to the system message[\s\S]*?(?=(?:[A-Z]|I am|Hello|Sure|Great|\d+\.|$))/gi,
+    /The user says[\s\S]*?(?=(?:[A-Z]|I am|Hello|Sure|Great|\d+\.|$))/gi,
+    /According to identity rules[\s\S]*?(?=(?:[A-Z]|I am|Hello|Sure|Great|\d+\.|$))/gi,
+    /So produce that response[\s\S]*?(?=(?:[A-Z]|I am|Hello|Sure|Great|\d+\.|$))/gi,
+    
+    // Remove system reasoning patterns
+    /We need to respond[\s\S]*?(?=(?:[A-Z]|I am|Hello|Sure|Great|\d+\.|$))/gi,
+    /I need to[\s\S]*?(?=(?:[A-Z]|I am|Hello|Sure|Great|\d+\.|$))/gi,
+    /Looking at[\s\S]*?(?=(?:[A-Z]|I am|Hello|Sure|Great|\d+\.|$))/gi,
+    
+    // Remove technical artifacts
+    /But we need to think[\s\S]*?(?=(?:\n\n|$))/gi,
+    /The question[\s\S]*?lambda[\s\S]*?(?=(?:\n\n|$))/gi,
+    /In the context of[\s\S]*?provided code[\s\S]*?(?=(?:\n\n|$))/gi,
+    
+    // Remove waiting and processing indicators
+    /^[.\s…]*(?:Wait|etc|thinking|processing)[.\s…]*$/gmi,
+    /^[.\s…]{5,}$/gm,
+    
+    // Remove system tokens and artifacts
+    /<\|[^|]*\|>/g,
+    /\|start\||\|end\|/gi,
+    /assistantfinal/gi,
+    
+    // Remove incomplete responses
+    /^to\s*chat?\??\s*$/gmi,
+    /^\"\.\s*$/gmi,
+    /^[a-z]{1,3}\s*$/gmi
   ];
   
-  // Try to find where the real response starts
-  for (const starter of realResponseStarters) {
-    const match = cleanedContent.match(starter);
-    if (match && match.index > 50) { // Only if there's substantial content before it
-      console.log(`🧹 Found real response starting with: ${match[0]}`);
-      cleanedContent = cleanedContent.substring(match.index);
-      break;
+  // Apply all cleaning patterns
+  systemThinkingPatterns.forEach(pattern => {
+    cleanedContent = cleanedContent.replace(pattern, '');
+  });
+  
+  // STEP 3: FIND ACTUAL RESPONSE START
+  // Look for where the real response begins after cleaning
+  const realResponseMarkers = [
+    /^I am BELTO AI/i,
+    /^Hello[!,]/i,
+    /^Great[!,]/i,
+    /^Sure[!,]/i,
+    /^Absolutely[!,]/i,
+    /^Of course[!,]/i,
+    /^(?:Quantum computing|Machine learning|Photosynthesis|Neural networks|Climate change)/i,
+    /^\d+\./,
+    /^#/,
+    /^\*/
+  ];
+  
+  // Find the best starting point
+  let bestStart = 0;
+  let bestScore = -1;
+  
+  for (const marker of realResponseMarkers) {
+    const match = cleanedContent.match(marker);
+    if (match && match.index !== undefined) {
+      const score = cleanedContent.length - match.index; // Prefer later matches
+      if (score > bestScore) {
+        bestStart = match.index;
+        bestScore = score;
+      }
     }
   }
   
-  // Method 2: Remove large blocks of system thinking (fallback)
-  if (cleanedContent.includes('We need to respond') || cleanedContent.includes('The user says')) {
-    console.log('🧹 Applying aggressive system thinking removal');
-    cleanedContent = cleanedContent
-      // Remove everything up to the first real sentence
-      .replace(/^[\s\S]*?(?=(?:Great|Sure|Absolutely|Of course|I'd be happy|Let's|Here's|To help|Machine learning|Quantum computing|Step \d+|\d+\.|#|\*))/, '')
-      // Remove any remaining system thinking blocks
-      .replace(/We need to respond[\s\S]*?(?=(?:Great|Sure|Absolutely|Let's|Here's|Step \d+|\d+\.|$))/gi, '')
-      .replace(/The user says[\s\S]*?(?=(?:Great|Sure|Absolutely|Let's|Here's|Step \d+|\d+\.|$))/gi, '')
-      .replace(/We can (?:ask|say|help|produce)[\s\S]*?(?=(?:Great|Sure|Absolutely|Let's|Here's|Step \d+|\d+\.|$))/gi, '');
+  if (bestStart > 0) {
+    cleanedContent = cleanedContent.substring(bestStart);
+    console.log(`📍 Found clean response start at position ${bestStart}`);
   }
-  
-  // Method 3: Remove common system artifacts and irrelevant content
+
+  // STEP 4: FINAL CLEANING
   cleanedContent = cleanedContent
-    // Remove dots and waiting patterns
-    .replace(/^[.\s…]*Wait[.\s…]*$/gmi, '')
-    .replace(/^[.\s…]*etc[.\s…]*$/gmi, '')
-    .replace(/^[.\s…]{10,}$/gm, '')
-    // Remove system tokens
-    .replace(/<\|end\|><\|start\|>assistant<\|channel\|>final<\|message\|>/gi, '')
-    .replace(/<\|[^|]*\|>/g, '')
-    .replace(/\|start\||\|end\|/gi, '')
-    // AGGRESSIVE FILTER: Remove irrelevant programming content
-    .replace(/But we need to think:[\s\S]*?(?=(?:\n\n|$))/gi, '')
-    .replace(/The question:[\s\S]*?lambda[\s\S]*?(?=(?:\n\n|$))/gi, '')
-    .replace(/In the context of[\s\S]*?provided code[\s\S]*?(?=(?:\n\n|$))/gi, '')
-    .replace(/what is the difference between[\s\S]*?enclosing method[\s\S]*?(?=(?:\n\n|$))/gi, '')
-    .replace(/In the lambda[\s\S]*?refers to[\s\S]*?(?=(?:\n\n|$))/gi, '')
-    .replace(/you can't declare local classes[\s\S]*?(?=(?:\n\n|$))/gi, '')
-    .replace(/But the question likely expects[\s\S]*?(?=(?:\n\n|$))/gi, '')
-    .replace(/lexical sc[\s\S]*?$/gi, '')
-    // Remove incomplete or truncated responses
-    .replace(/^to chat\??\s*$/gmi, '')
-    .replace(/^\"\.\s*$/gmi, '')
-    .replace(/^[a-z]{1,3}\s*$/gmi, '') // Remove single words like "to"
-    // Clean up excessive whitespace
-    .replace(/\n{4,}/g, '\n\n')
+    // Remove remaining artifacts
+    .replace(/^[^a-zA-Z0-9]*$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
     .replace(/[ \t]{3,}/g, '  ')
     .trim();
 
-  // STEP 3: Restore code blocks with proper formatting
+  // STEP 5: RESTORE CODE BLOCKS
   Object.keys(codeBlockPlaceholders).forEach(placeholder => {
     const blockIndex = codeBlockPlaceholders[placeholder];
     const block = codeBlocks[blockIndex];
     
     if (block) {
-      // Detect language if not specified
       const language = block.language || detectCodeLanguage(block.code) || 'text';
-      
-      // Restore the code block with original formatting preserved
       const restoredBlock = `\`\`\`${language}\n${block.code}\n\`\`\``;
       cleanedContent = cleanedContent.replace(placeholder, restoredBlock);
     }
   });
 
-  // STEP 4: Final validation and cleanup
+  // STEP 6: QUALITY VALIDATION
   cleanedContent = cleanedContent
-    .replace(/\s+([.!?])/g, '$1') // Fix spacing before punctuation
+    .replace(/\s+([.!?])/g, '$1')
     .trim();
 
-  // STEP 5: Final validation - detect completely irrelevant responses
-  const irrelevantPatterns = [
-    /lambda|enclosing method|local classes/i,
-    /programming|java|javascript|this\s+refers\s+to/i,
-    /question.*expects|context.*provided.*code/i,
-    /^to\s*chat?\??\s*$/i,
-    /^\s*[a-z]{1,3}\s*$/i // Single short words
+  // Check for system thinking contamination
+  const contaminationCheck = [
+    /according to.*system.*message/i,
+    /the user says/i,
+    /produce that response/i,
+    /final answer/i,
+    /assistantfinal/i,
+    /^[a-z]{1,5}\s*$/i,
+    /^[^a-zA-Z0-9]*$/
   ];
   
-  const isIrrelevant = irrelevantPatterns.some(pattern => pattern.test(cleanedContent));
-  const isTooShort = cleanedContent.length < 10;
+  const isContaminated = contaminationCheck.some(pattern => pattern.test(cleanedContent));
+  const isTooShort = cleanedContent.length < 15;
+  const hasNoMeaningfulContent = !/[a-zA-Z]{3,}/.test(cleanedContent);
   
-  if (isIrrelevant || isTooShort) {
-    console.log('🚨 DETECTED IRRELEVANT RESPONSE - Replacing with appropriate response');
-    console.log('Irrelevant content:', cleanedContent.substring(0, 100));
+  if (isContaminated || isTooShort || hasNoMeaningfulContent) {
+    console.log('🚨 Contaminated or poor quality response detected, providing clean fallback');
+    console.log('Bad content:', cleanedContent.substring(0, 150));
     
-    // Return appropriate conversational response instead
-    if (cleanedContent.includes('hi') || cleanedContent.includes('hello')) {
-      return "Hello! I'm BELTO AI, your educational assistant. How can I help you with your studies today?";
+    // Return appropriate clean response
+    if (content.toLowerCase().includes('who are you') || content.toLowerCase().includes('hello')) {
+      return "I am BELTO AI, your educational assistant. I'm here to help you with your studies and academic questions. How can I assist you today?";
     } else {
-      return "I'm BELTO AI, your educational assistant. I'm here to help you with your academic questions and learning needs. What would you like to know?";
+      return "I'm BELTO AI, your educational assistant. I'm designed to help students with their academic work and learning. What would you like to know?";
     }
   }
 
@@ -1073,9 +1154,6 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
 
     console.log('Final message count being sent to AI:', optimizedMessages.length);
 
-    // Determine appropriate timeout based on request complexity
-    const requestTimeout = getTimeoutForRequest(body, optimizedMessages);
-
     // Remove token limits to allow complete responses
     // The endpoints will generate naturally complete responses without artificial limits
     
@@ -1186,491 +1264,101 @@ As BELTO AI, you are processing ${documentTypes} file(s). Provide a ${processing
     const hasAttachments = body.attachments && body.attachments.length > 0;
     const totalContentLength = optimizedMessages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
     
-    // EMERGENCY FAST PATH: Test endpoints quickly and use first working one
-    // More aggressive conditions for better user experience
-    const userMessage = body.prompt || body.message || '';
-    const actualMessageLength = userMessage.length;
-    const historyLength = (body.history || []).length;
+    // HEALTH-CHECK BASED ENDPOINT SELECTION (NO TIMEOUTS)
+    console.log('🚀 Starting health-check based endpoint selection process');
     
-    // Use actual message length instead of optimizedMessages total
-    const isSimpleRequest = !hasAttachments && actualMessageLength < 100 && historyLength <= 3;
-    const isVerySimpleRequest = !hasAttachments && actualMessageLength < 20;
+    // Step 1: Find a healthy endpoint using health checks (no timeouts)
+    const healthyEndpoint = await findHealthyEndpoint();
     
-    console.log('🔍 EMERGENCY FAST PATH CHECK:', { 
-      hasAttachments, 
-      totalContentLength, 
-      optimizedMessagesLength: optimizedMessages.length,
-      actualMessageLength,
-      historyLength,
-      userMessage: userMessage.substring(0, 50),
-      isSimpleRequest,
-      isVerySimpleRequest,
-      willTrigger: isSimpleRequest || isVerySimpleRequest,
-      rawMessage: optimizedMessages[optimizedMessages.length - 1]?.content || 'NO MESSAGE'
-    });
-    
-    if (isSimpleRequest || isVerySimpleRequest) {
-      console.log('🚀 EMERGENCY FAST PATH: Testing endpoints quickly for simple request');
-      console.log('🔍 RAW REQUEST DATA:', { 
-        prompt: body.prompt, 
-        message: body.message,
-        attachments: body.attachments?.length || 0,
-        history: body.history?.length || 0
+    if (!healthyEndpoint) {
+      console.error('[AI Proxy] No healthy endpoints found');
+      return NextResponse.json({ 
+        error: 'No healthy endpoints available',
+        details: 'All endpoints failed health checks' 
+      }, { status: 503 });
+    }
+
+    console.log(`[AI Proxy] Using healthy endpoint: ${healthyEndpoint.url} (Priority: ${healthyEndpoint.priority})`);
+
+    try {
+      // Step 2: Make the actual request WITHOUT timeout
+      const requestConfig = formatRequestForEndpoint(healthyEndpoint.url, optimizedMessages, apiKey);
+      
+      console.log(`[AI Proxy] Sending request to ${healthyEndpoint.url} without timeout...`);
+      const requestStartTime = Date.now();
+      
+      const response = await axios.post(requestConfig.url, requestConfig.data, {
+        headers: requestConfig.headers
+        // NO TIMEOUT - wait for complete response
       });
-      
-      // Quick endpoint test with minimal payload - TRY DIFFERENT MODEL FIRST
-      const testEndpoints = [
-        { url: 'http://bel2ai.duckdns.org:8002/v1/completions', type: 'completion' }, // Try this first
-        { url: 'http://minibelto.duckdns.org:8007/v1/completions', type: 'completion' },
-        { url: 'http://bel2ai.duckdns.org:8001/v1/chat/completions', type: 'chat' } // Last resort
-      ];
-      
-      for (const testEndpoint of testEndpoints) {
-        try {
-          console.log(`⚡ Quick test: ${testEndpoint.url}`);
+
+      const responseTime = Date.now() - requestStartTime;
+      updateEndpointStats(healthyEndpoint.url, true, responseTime);
+
+      console.log(`📡 Response received: ${response.status} in ${responseTime}ms from ${healthyEndpoint.name}`);
+
+      if (response.data) {
+        // Parse the successful response
+        const parsedResponse = parseResponseFromEndpoint(response, healthyEndpoint.url);
+        
+        // Enhanced validation of response content
+        if (!parsedResponse.content || parsedResponse.content.trim().length === 0) {
+          console.error(`❌ Empty response from ${healthyEndpoint.name}`);
+          throw new Error('Empty response content received');
+        }
+        
+        console.log(`📝 Raw response preview: ${parsedResponse.content.substring(0, 200)}...`);
+        
+        // Apply enhanced cleaning for complete, readable responses
+        let finalContent = cleanResponseContent(parsedResponse.content);
+        
+        // Ensure we have meaningful content after cleaning
+        if (!finalContent || finalContent.trim().length < 10) {
+          console.log('⚠️ Content too short after cleaning, using fallback response');
+          const userMessage = body.prompt || body.message || '';
+          const isSimpleGreeting = /^(hi|hello|hey|who are you|how are you)[\s\?\!]*$/i.test(userMessage.trim());
           
-          let testPayload;
-          const userMessage = optimizedMessages[optimizedMessages.length - 1].content;
-          
-          // DYNAMIC SYSTEM PROMPT for emergency fast path
-          let systemPromptContent = `You are BELTO AI, a helpful educational assistant. IMPORTANT INSTRUCTIONS:
-1. Give direct, conversational responses to the user
-2. Do NOT discuss programming, lambda functions, Java, JavaScript, or any technical code concepts unless the user specifically asks about programming
-3. Do NOT mention "context of provided code", "enclosing method", "local classes", or any programming terminology
-4. If the user says "hi" or "hello", respond with a friendly greeting as BELTO AI
-5. If the user asks "how are you", respond conversationally as an AI assistant
-6. Focus ONLY on educational assistance and normal conversation
-7. NEVER generate programming explanations unless explicitly requested
-8. Keep responses natural and conversational`;
-          
-          // Check for custom system prompts in emergency fast path too
-          if (body.preferences && body.preferences.systemPrompts && body.preferences.systemPrompts.length > 0) {
-            const customPrompt = body.preferences.systemPrompts[0];
-            systemPromptContent = customPrompt.content || systemPromptContent;
-            console.log('🚀 Fast path using custom system prompt:', customPrompt.name || 'Custom prompt');
-          }
-          
-          if (testEndpoint.type === 'chat') {
-            testPayload = {
-              model: 'default',
-              messages: [
-                { role: 'system', content: systemPromptContent },
-                { role: 'user', content: userMessage }
-              ],
-              temperature: 0.7,
-              max_tokens: 150
-            };
+          if (isSimpleGreeting) {
+            finalContent = "I am BELTO AI, your educational assistant. I'm here to help you with your studies and academic questions. How can I assist you today?";
           } else {
-            // For completion models, add the system instruction in the prompt
-            const systemPrompt = `${systemPromptContent}
-
-User: ${userMessage}
-BELTO AI:`;
-            testPayload = {
-              model: 'default',
-              prompt: systemPrompt,
-              temperature: 0.7,
-              max_tokens: 150
-            };
+            throw new Error('Response content insufficient after cleaning');
           }
-          
-          const requestStartTime = Date.now();
-          const response = await axios.post(
-            testEndpoint.url,
-            testPayload,
-            {
-              headers: { 'Content-Type': 'application/json' },
-              timeout: 4000, // 4 second timeout
-              validateStatus: function (status) {
-                return status >= 200 && status < 300; // Only accept 2xx status codes
-              }
-            }
-          );
-          
-          const responseTime = Date.now() - requestStartTime;
-          console.log(`⚡ SUCCESS! Working endpoint found in ${responseTime}ms: ${testEndpoint.url}`);
-          
-          // Parse response based on type
-          let content;
-          if (testEndpoint.type === 'chat' && response.data.choices && response.data.choices[0].message) {
-            content = response.data.choices[0].message.content;
-          } else if (response.data.choices && response.data.choices[0].text) {
-            content = response.data.choices[0].text;
-          }
-          
-          if (content && content.trim().length > 0) {
-            // NUCLEAR OPTION: Force clean conversational responses
-            let finalContent = content.trim();
-            
-            // Check if AI violated the system prompt (contaminated response)
-            const violatesSystemPrompt = (
-              finalContent.includes('lambda') ||
-              finalContent.includes('enclosing method') ||
-              finalContent.includes('local classes') ||
-              finalContent.includes('But we need to think') ||
-              finalContent.includes('The question:') ||
-              finalContent.includes('In the context of') ||
-              finalContent.includes('provided code') ||
-              finalContent.includes('programming') ||
-              finalContent.includes('java') ||
-              finalContent.includes('javascript') ||
-              finalContent.match(/^to\s*chat?\??$/i) ||
-              finalContent.match(/^\s*[a-z]{1,5}\s*$/i) ||
-              finalContent.match(/^[^a-zA-Z]*$/) ||
-              finalContent.length < 10
-            );
-            
-            if (violatesSystemPrompt) {
-              console.log('🚨 AI VIOLATED SYSTEM PROMPT - Response contaminated');
-              console.log('Contaminated content:', finalContent.substring(0, 100));
-              console.log('🔄 Trying next endpoint...');
-              continue; // Try next endpoint instead of using contaminated response
-            } else {
-              // Apply normal cleaning to good responses
-              finalContent = cleanResponseContent(content);
-              console.log('✅ Clean response follows system prompt');
-            }
-            
-            console.log('✅ Emergency fast path successful!');
-            return NextResponse.json({
-              response: finalContent,
-              model: testEndpoint.type === 'chat' ? 'llama-3.1-8b' : 'gpt-oss-20b',
-              tokenUsage: response.data.usage || { total_tokens: 50, prompt_tokens: 10, completion_tokens: 40 }
-            });
-          }
-          
-        } catch (error) {
-          console.log(`⚠️ Endpoint ${testEndpoint.url} failed:`, {
-            message: error.message,
-            code: error.code,
-            status: error.response?.status,
-            statusText: error.response?.statusText,
-            data: error.response?.data
-          });
-          continue; // Try next endpoint
-        }
-      }
-      
-      console.log('⚠️ All endpoints failed in fast path, falling back to normal logic');
-    }
-    
-    // NORMAL PATH: Complex retry logic for other requests
-    let lastError = null;
-    let maxRetries;
-    if (hasAttachments) {
-      // Try all endpoints for attachments
-      maxRetries = endpoints.length;
-    } else if (!hasAttachments && totalContentLength < 500) {
-      // Simple messages - only 1 attempt for speed (like curl)
-      maxRetries = 1;
-    } else {
-      // Complex messages - limited retries
-      maxRetries = 2;
-    }
-
-    let attemptedEndpoints = new Set(); // Track which endpoints we've tried
-    let endpointAttemptOrder = [...endpoints.map(e => e.url)];
-    let endpointIndex = 0;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        // For attachments, rotate through all endpoints before fallback
-        let selectedEndpoint;
-        if (hasAttachments) {
-          selectedEndpoint = endpoints[endpointIndex % endpoints.length].url;
-          endpointIndex++;
-        } else {
-          selectedEndpoint = selectEndpoint();
-        }
-
-        // If we've already tried this endpoint and it's the only one, skip further attempts
-        if (attemptedEndpoints.has(selectedEndpoint) && attemptedEndpoints.size >= endpoints.length) {
-          console.log(`All endpoints tried and failed, skipping attempt ${attempt}`);
-          // For document/large requests, always try all endpoints before fallback
-          if (hasAttachments && attempt < maxRetries) {
-            endpointStats.forEach(endpoint => {
-              endpoint.isAvailable = true;
-              endpoint.consecutiveFailures = Math.max(0, endpoint.consecutiveFailures - 1);
-              endpoint.circuitBreakerOpen = false;
-            });
-            continue;
-          }
-          break;
-        }
-
-        attemptedEndpoints.add(selectedEndpoint);
-        console.log(`Attempt ${attempt}: Selected endpoint for request: ${selectedEndpoint}`);
-        
-        // Format request for the specific endpoint type
-        const requestConfig = formatRequestForEndpoint(selectedEndpoint, optimizedMessages, apiKey);
-        
-        // Add detailed logging for debugging
-        const endpointConfig = endpoints.find(e => e.url === selectedEndpoint);
-        console.log('🔍 Request details:', {
-          endpoint: selectedEndpoint,
-          endpointName: endpointConfig?.name || 'Unknown',
-          model: endpointConfig?.model || 'Unknown',
-          type: endpointConfig?.type || 'Unknown',
-          timeout: requestTimeout,
-          payloadSize: JSON.stringify(requestConfig.data).length,
-          messageCount: messages.length,
-          attemptedEndpoints: Array.from(attemptedEndpoints),
-          apiKeyPresent: !!apiKey,
-          apiKeyLength: apiKey ? apiKey.length : 0
-        });
-        
-        // Start timing the request for performance tracking
-        const requestStartTime = Date.now();
-
-        // Make the AI API call with formatted request
-        const response = await axios.post(
-          requestConfig.url,
-          requestConfig.data,
-          {
-            headers: requestConfig.headers,
-            timeout: requestTimeout,
-            // Remove validateStatus to get proper error responses
-            validateStatus: function (status) {
-              return status < 500; // Accept all status codes under 500
-            }
-          }
-        );
-
-        // Calculate response time and update endpoint stats for future load balancing decisions
-        const responseTime = Date.now() - requestStartTime;
-        updateEndpointStats(selectedEndpoint, true, responseTime);
-
-        console.log(`AI response received with status: ${response.status}, time: ${responseTime}ms`);
-        
-        // Parse response using endpoint-specific parser
-        const parsedResponse = parseResponseFromEndpoint(response, selectedEndpoint);
-        
-        // Handle successful response
-        if (response.status === 200) {
-          console.log(`✅ AI response successful: ${parsedResponse.content?.substring(0, 100)}...`);
-          
-          // Validate that we actually got content back
-          if (!parsedResponse.content || parsedResponse.content.trim().length === 0) {
-            console.error(`❌ Empty response content from ${selectedEndpoint}`);
-            throw new Error('Empty response content received from AI service');
-          }
-          
-          // Apply minimal cleaning to preserve natural AI responses
-          let finalContent = cleanResponseContent(parsedResponse.content);
-          
-          // Only basic validation - preserve the AI's natural response
-          if (!finalContent || finalContent.trim().length < 5) {
-            console.log('⚠️ Response too short after cleaning, using original content');
-            finalContent = parsedResponse.content.trim();
-          }
-          
-          // Apply post-processing rules if provided
-          if (body.preferences?.processingRules) {
-            console.log('🔧 Applying post-processing rules to response');
-            finalContent = applyPostprocessingRules(finalContent, body.preferences.processingRules);
-          }
-          
-          return NextResponse.json({
-            response: finalContent,
-            tokenUsage: parsedResponse.usage
-          });
-        } else {
-          // Log detailed error for non-200 responses
-          console.error(`❌ Non-200 response from ${selectedEndpoint}:`, {
-            status: response.status,
-            statusText: response.statusText,
-            data: response.data,
-            headers: response.headers
-          });
-          
-          // Non-200 but non-500 status codes should be treated as errors
-          throw new Error(`HTTP ${response.status}: ${response.data?.error?.message || response.statusText || 'Unknown error'}`);
-        }
-      } catch (error) {
-        lastError = error;
-        
-        // Update endpoint stats for failures if we know which endpoint failed
-        if (error.config?.url) {
-          updateEndpointStats(error.config.url, false, 0);
-          console.log(`Updated stats for ${error.config.url} to reflect failure`);
-        }
-
-        console.error(`❌ Attempt ${attempt} failed:`, {
-          message: error.message,
-          status: error.response?.status,
-          statusText: error.response?.statusText,
-          data: error.response?.data,
-          code: error.code,
-          url: error.config?.url,
-          timeout: error.code === 'ECONNABORTED' ? requestTimeout : 'N/A'
-        });
-
-        // If this is not the last attempt, wait before retrying
-        if (attempt < maxRetries && attemptedEndpoints.size < endpoints.length) {
-          // ADAPTIVE: Longer wait for document/large requests
-          let waitTime;
-          if (hasAttachments) {
-            const docSize = body.attachments.reduce((max, att) => Math.max(max, att.content?.length || 0), 0);
-            if (docSize > 100000) {
-              waitTime = 5000;
-            } else if (docSize > 50000) {
-              waitTime = 3000;
-            } else {
-              waitTime = 2000;
-            }
-          } else if (totalContentLength < 200) {
-            waitTime = 300;
-          } else if (totalContentLength < 1000) {
-            waitTime = Math.min(attempt * 500, 1000);
-          } else {
-            waitTime = Math.min(attempt * 1000, 2000);
-          }
-          console.log(`Waiting ${waitTime}ms before retry...`);
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-        }
-      }
-    }
-
-    // If we get here, all retries failed
-    const error = lastError;
-    // Log detailed error information
-    console.error('AI API Error:', {
-      message: error.message,
-      status: error.response?.status,
-      data: error.response?.data,
-      code: error.code,
-      url: error.config?.url,
-      requestBody: error.config?.data ? JSON.parse(error.config.data) : 'No request body'
-    });
-    // Provide more specific error messages based on the error type
-    let errorMessage = 'Failed to generate AI response';
-    let statusCode = 500;
-    let errorDetails = {
-      message: error.message,
-      code: error.code,
-      status: error.response?.status
-    };
-    // Enhanced error handling with endpoint diagnostics
-    if (error.code === 'ECONNREFUSED' || error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
-      console.error('Connection error details:', {
-        code: error.code,
-        endpoint: error.config?.url,
-        timeout: requestTimeout,
-        availableEndpoints: endpointStats.filter(e => e.isAvailable).length,
-        totalEndpoints: endpointStats.length
-      });
-      // Only trigger fallback for genuine connection failures AND when all endpoints are exhausted
-      if (ENABLE_FALLBACK_RESPONSES && attemptedEndpoints.size >= endpoints.length) {
-        console.log('🔄 Triggering educational fallback response due to ALL endpoints failing');
-        console.log('Fallback trigger details:', {
-          hasAttachments,
-          contentLength: body.attachments?.[0]?.content?.length || 0,
-          requestTimeout,
-          baseTimeout: BASE_TIMEOUT_MS,
-          attemptedEndpoints: Array.from(attemptedEndpoints),
-          endpointStats: endpointStats.map(e => ({ url: e.url, isAvailable: e.isAvailable, failCount: e.failCount }))
-        });
-        
-        if (hasAttachments && body.attachments[0].content) {
-          // For document requests, return educational fallback
-          return NextResponse.json({
-            response: `Hello! I'm BELTO AI, your educational assistant. I'm currently experiencing some connectivity issues while processing your document, but I'm here to help with your academic needs. 
-
-📄 **Your Document Upload**: I can see you've uploaded a document for analysis. While I work on restoring full connectivity, here are some ways I can assist you:
-
-• **Ask specific questions** about sections of your document
-• **Request summaries** of particular chapters or topics  
-• **Get explanations** of key concepts within the material
-• **Break down complex topics** into manageable parts
-
-💡 **Quick Tip**: Try asking something like "What are the main points in section 2?" or "Explain the key concepts in this document" for faster processing.
-
-I'm designed specifically to support your academic journey and educational activities. Please try your request again in a moment, or feel free to ask me about any specific part of your document!`,
-            tokenUsage: { total_tokens: 150, prompt_tokens: 50, completion_tokens: 100 },
-            fallback: true,
-            error: "Service temporarily slow or unavailable"
-          });
         }
         
-        // For simple messages, provide educational identity and help
-        let fallbackMessage = `Hello! I'm BELTO AI, your dedicated educational assistant designed to help students with their academic tasks and educational activities.
-
-🎓 **How I Can Help You**:
-• Answer questions about your coursework and studies
-• Explain complex academic concepts in simple terms  
-• Help with research and analysis
-• Provide study guidance and learning support
-• Assist with educational document review
-
-I'm currently experiencing some connectivity issues with my advanced processing systems, but I'm still here to support your learning journey!`;
-
-        if (requestTimeout > BASE_TIMEOUT_MS) {
-          fallbackMessage += `\n\n⏱️ **Current Status**: Processing complex requests is taking longer than usual. For faster responses, try asking simpler questions or breaking your request into smaller parts.`;
-        } else {
-          fallbackMessage += `\n\n🔧 **Current Status**: My services are temporarily limited due to connectivity issues. Please try again in a few moments, and I'll be ready to help with your educational needs!`;
+        // Apply post-processing rules if provided
+        if (body.preferences?.processingRules) {
+          console.log('🔧 Applying post-processing rules');
+          finalContent = applyPostprocessingRules(finalContent, body.preferences.processingRules);
         }
         
-        fallbackMessage += `\n\n💡 **Try asking me**: "Who are you?" or "How can you help me with my studies?" to learn more about my educational capabilities!`;
+        console.log(`✅ SUCCESS! Generated ${finalContent.length} character response from ${healthyEndpoint.name}`);
+        console.log(`📋 Final response preview: ${finalContent.substring(0, 100)}...`);
         
         return NextResponse.json({
-          response: fallbackMessage,
-          tokenUsage: { total_tokens: 120, prompt_tokens: 30, completion_tokens: 90 },
-          fallback: true,
-          error: "Service temporarily unavailable"
+          response: finalContent,
+          model: healthyEndpoint.model || 'unknown',
+          endpoint: healthyEndpoint.name || healthyEndpoint.url,
+          responseTime: responseTime,
+          tokenUsage: parsedResponse.usage
         });
+      } else {
+        throw new Error('No data in response');
       }
-      errorMessage = `Could not connect to AI service. The service might be down or unreachable. Tried ${endpointStats.length} endpoints.`;
-      statusCode = 503; // Service Unavailable
-    } else if (error.response?.status === 401) {
-      console.log('🔄 Triggering fallback response due to authentication error');
-      errorMessage = 'Authentication failed with the AI service. Please check API key configuration.';
-      statusCode = 500;
-    } else if (error.response?.status === 400) {
-      console.log('🔄 Triggering fallback response due to bad request error');
-      console.log('Bad request details:', {
-        responseData: error.response?.data,
-        requestPayload: aiRequestPayload
-      });
-      errorMessage = 'The AI service rejected the request. Check the request format.';
-      statusCode = 400;
-    } else if (error.response?.data?.error) {
-      console.log('🔄 Triggering fallback response due to AI service error');
-      errorMessage = `AI service error: ${error.response.data.error.message || 'Unknown error'}`;
+    } catch (error) {
+      // Update endpoint stats to track failures
+      updateEndpointStats(healthyEndpoint.url, false, 0);
+      
+      console.error(`[AI Proxy] ❌ Failed with healthy endpoint ${healthyEndpoint.url}:`, error.message);
+      
+      return NextResponse.json({ 
+        error: 'Request failed with healthy endpoint', 
+        details: error.message 
+      }, { status: 503 });
     }
-    return NextResponse.json(
-      { 
-        error: errorMessage, 
-        details: errorDetails,
-        timestamp: new Date().toISOString()
-      },
-      { status: statusCode }
-    );
+
   } catch (error) {
-    // Enhanced error handler to catch all types of errors
-    console.error('❌ Unexpected error in AI proxy:', {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-      type: typeof error
-    });
-    
-    // Check if this is a ReferenceError (undefined variable)
-    if (error instanceof ReferenceError) {
-      console.error('🚨 ReferenceError detected - this indicates a code bug:', error.message);
-    }
-    
-    return NextResponse.json(
-      { 
-        error: 'Unexpected server error', 
-        details: { 
-          message: error.message,
-          name: error.name,
-          type: error.constructor.name
-        },
-        timestamp: new Date().toISOString()
-      },
-      { status: 500 }
-    );
+    console.error('[AI Proxy] Request processing error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
@@ -1679,24 +1367,64 @@ export async function OPTIONS(request) {
 }
 
 export async function GET(request) {
-  // Status endpoint for debugging
+  // Enhanced status endpoint for debugging and monitoring
   return NextResponse.json({
     status: 'online',
+    version: '2.0.0',
+    features: [
+      'Priority-based endpoint selection',
+      'Enhanced response cleaning',
+      'Complete response optimization',
+      'Performance tracking',
+      'Circuit breaker pattern'
+    ],
     endpoints: endpointStats.map(stat => ({
       url: stat.url,
       name: stat.name,
       model: stat.model,
       type: stat.type,
       context: stat.context,
+      priority: stat.priority,
+      timeout: stat.timeout,
       isAvailable: stat.isAvailable,
       failCount: stat.failCount,
       lastResponseTime: stat.lastResponseTime,
+      avgResponseTime: Math.round(stat.avgResponseTime),
+      successRate: Math.round(stat.successRate * 100),
       consecutiveFailures: stat.consecutiveFailures,
       circuitBreakerOpen: stat.circuitBreakerOpen,
       lastChecked: new Date(stat.lastChecked).toISOString()
-    })),
-    totalEndpoints: endpoints.length,
-    availableEndpoints: endpointStats.filter(e => e.isAvailable && !e.circuitBreakerOpen).length,
+    })).sort((a, b) => a.priority - b.priority), // Sort by priority
+    summary: {
+      totalEndpoints: endpoints.length,
+      availableEndpoints: endpointStats.filter(e => e.isAvailable && !e.circuitBreakerOpen).length,
+      highestPriorityAvailable: endpointStats
+        .filter(e => e.isAvailable && !e.circuitBreakerOpen)
+        .sort((a, b) => a.priority - b.priority)[0]?.name || 'None',
+      averageResponseTime: Math.round(
+        endpointStats
+          .filter(e => e.avgResponseTime > 0)
+          .reduce((sum, e) => sum + e.avgResponseTime, 0) / 
+        endpointStats.filter(e => e.avgResponseTime > 0).length || 0
+      ),
+      overallSuccessRate: Math.round(
+        endpointStats.reduce((sum, e) => sum + e.successRate, 0) / endpointStats.length * 100
+      )
+    },
+    configuration: {
+      enableFallbackResponses: ENABLE_FALLBACK_RESPONSES,
+      timeouts: {
+        ultraFast: ULTRA_FAST_TIMEOUT_MS,
+        fast: FAST_TIMEOUT_MS,
+        base: BASE_TIMEOUT_MS,
+        attachment: ATTACHMENT_TIMEOUT_MS
+      },
+      circuitBreaker: {
+        threshold: CIRCUIT_BREAKER_THRESHOLD,
+        timeout: CIRCUIT_BREAKER_TIMEOUT,
+        maxConsecutiveFailures: MAX_CONSECUTIVE_FAILURES
+      }
+    },
     apiKeyConfigured: !!process.env.AI_API_KEY,
     timestamp: new Date().toISOString()
   });
